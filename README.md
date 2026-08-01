@@ -92,7 +92,7 @@ corepack pnpm start
 7. Open **Saved videos** to browse finished MP4 files from the Processed folder by name, recording date, and thumbnail. This page is read-only and can only open videos in VLC.
 8. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
-   - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging.
+   - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging. Only front-camera audio is kept, and it is copied without re-encoding. Rear-camera audio is ignored.
    - **Delete** asks twice, then moves both camera files to the Recycle Bin or Trash.
 9. Select multiple segments with their checkboxes to merge them into one video, mark them processed or unprocessed together, or delete them with two confirmations. **Select visible** selects the current tab at once.
 10. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
@@ -185,6 +185,6 @@ This creates DMG and ZIP packages for Apple Silicon and Intel Macs in `dist`.
 The `Build installers` GitHub Actions workflow can be started manually to download test artifacts. Pushing a version tag builds Windows and macOS packages and attaches all of them to a GitHub Release:
 
 ```powershell
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.2.2
+git push origin v0.2.2
 ```

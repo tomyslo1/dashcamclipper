@@ -6,6 +6,7 @@ const test = require('node:test')
 
 const {
   applyFilenameDateOverrides,
+  buildFrontAudioPlaylist,
   buildMergeArguments,
   buildProcessedFilename,
   buildThumbnailArguments,
@@ -25,14 +26,20 @@ test('mirrors the rear image above its bottom 50 pixels by default', () => {
     { front: { path: 'C:\\front\\one.avi' }, rear: { path: 'C:\\rear\\one.avi' } },
     { front: { path: 'C:\\front\\two.avi' }, rear: { path: 'C:\\rear\\two.avi' } }
   ]
-  const args = buildMergeArguments(clips, 'output.mp4', ['-c:v', 'libx265'])
+  const args = buildMergeArguments(clips, 'output.mp4', ['-c:v', 'libx265'], {
+    frontAudioPlaylistPath: 'front-audio.ffconcat'
+  })
   const filter = args[args.indexOf('-filter_complex') + 1]
 
   assert.match(filter, /\[1:v\]split=2\[rearBase0\]\[rearFlip0\]/)
   assert.match(filter, /\[rearFlip0\]crop=iw:ih-50:0:0,hflip\[rearMain0\]/)
   assert.match(filter, /\[rearBase0\]\[rearMain0\]overlay=0:0\[rear0\]/)
   assert.match(filter, /\[0:v\]\[rear0\]vstack=inputs=2\[v0\]/)
-  assert.match(filter, /\[v0\]\[0:a\]\[v1\]\[2:a\]concat=n=2:v=1:a=1\[outv\]\[outa\]/)
+  assert.match(filter, /\[v0\]\[v1\]concat=n=2:v=1:a=0\[outv\]/)
+  assert.equal(args[args.indexOf('-c:a') + 1], 'copy')
+  assert.equal(args[args.indexOf('-map', args.indexOf('-map') + 1) + 1], '4:a:0')
+  assert.equal(args.includes('[outa]'), false)
+  assert.equal(args.includes('64k'), false)
   assert.ok(args.includes('C:\\front\\one.avi'))
 })
 
@@ -40,7 +47,10 @@ test('can stack the rear image without mirroring it', () => {
   const clips = [
     { front: { path: 'front.avi' }, rear: { path: 'rear.avi' } }
   ]
-  const args = buildMergeArguments(clips, 'output.mp4', [], { mirrorRear: false })
+  const args = buildMergeArguments(clips, 'output.mp4', [], {
+    mirrorRear: false,
+    frontAudioPlaylistPath: 'front-audio.ffconcat'
+  })
   const filter = args[args.indexOf('-filter_complex') + 1]
 
   assert.match(filter, /\[0:v\]\[1:v\]vstack=inputs=2\[v0\]/)
@@ -52,9 +62,30 @@ test('orders FFmpeg inputs naturally by clip filename', () => {
     { front: { name: 'MOVI0391.avi', path: 'front-391.avi' }, rear: { path: 'rear-391.avi' } },
     { front: { name: 'MOVI0390.avi', path: 'front-390.avi' }, rear: { path: 'rear-390.avi' } }
   ]
-  const args = buildMergeArguments(clips, 'output.mp4', ['-c:v', 'libx265'])
+  const args = buildMergeArguments(clips, 'output.mp4', ['-c:v', 'libx265'], {
+    frontAudioPlaylistPath: 'front-audio.ffconcat'
+  })
 
   assert.ok(args.indexOf('front-390.avi') < args.indexOf('front-391.avi'))
+})
+
+test('builds a naturally ordered playlist from front-camera files only', () => {
+  const clips = [
+    {
+      front: { name: 'MOVI0391.avi', path: "clips/Driver's/MOVI0391.avi" },
+      rear: { name: 'MOVI0391.avi', path: 'rear/MOVI0391.avi' }
+    },
+    {
+      front: { name: 'MOVI0390.avi', path: "clips/Driver's/MOVI0390.avi" },
+      rear: { name: 'MOVI0390.avi', path: 'rear/MOVI0390.avi' }
+    }
+  ]
+  const playlist = buildFrontAudioPlaylist(clips)
+
+  assert.ok(playlist.startsWith('ffconcat version 1.0'))
+  assert.ok(playlist.indexOf('MOVI0390.avi') < playlist.indexOf('MOVI0391.avi'))
+  assert.equal(playlist.includes('rear/MOVI0390.avi'), false)
+  assert.ok(playlist.includes("Driver'\\''s"))
 })
 
 test('uses available Windows HEVC hardware and falls back to CPU HEVC', () => {

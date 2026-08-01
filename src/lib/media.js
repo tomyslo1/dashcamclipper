@@ -124,6 +124,7 @@ async function cleanupTemporaryFiles() {
     const isOwnedFile = entry.isFile() && (
       (entry.name.startsWith('merged-') && entry.name.endsWith('.mp4')) ||
       (entry.name.startsWith('segment-') && entry.name.endsWith('.m3u8')) ||
+      (entry.name.startsWith('front-audio-') && entry.name.endsWith('.ffconcat')) ||
       (entry.name.startsWith('thumbnail-') && entry.name.endsWith('.jpg'))
     )
 
@@ -412,6 +413,10 @@ function buildMergeArguments(clips, outputPath, encoderArgs, options = {}) {
   const concatInputs = []
   const mirrorRear = options.mirrorRear !== false
 
+  if (!options.frontAudioPlaylistPath) {
+    throw new Error('A front-camera audio playlist is required.')
+  }
+
   orderedClips.forEach((clip, index) => {
     const frontInput = index * 2
     const rearInput = frontInput + 1
@@ -428,10 +433,12 @@ function buildMergeArguments(clips, outputPath, encoderArgs, options = {}) {
       stackedVideos.push(`[${frontInput}:v][${rearInput}:v]vstack=inputs=2[v${index}]`)
     }
 
-    concatInputs.push(`[v${index}][${frontInput}:a]`)
+    concatInputs.push(`[v${index}]`)
   })
 
-  const filter = `${stackedVideos.join(';')};${concatInputs.join('')}concat=n=${orderedClips.length}:v=1:a=1[outv][outa]`
+  const frontAudioInput = orderedClips.length * 2
+  inputArgs.push('-f', 'concat', '-safe', '0', '-i', options.frontAudioPlaylistPath)
+  const filter = `${stackedVideos.join(';')};${concatInputs.join('')}concat=n=${orderedClips.length}:v=1:a=0[outv]`
 
   return [
     '-y',
@@ -441,12 +448,10 @@ function buildMergeArguments(clips, outputPath, encoderArgs, options = {}) {
     '-map',
     '[outv]',
     '-map',
-    '[outa]',
+    `${frontAudioInput}:a:0`,
     ...encoderArgs,
     '-c:a',
-    'aac',
-    '-b:a',
-    '64k',
+    'copy',
     '-movflags',
     '+faststart',
     '-progress',
@@ -454,6 +459,22 @@ function buildMergeArguments(clips, outputPath, encoderArgs, options = {}) {
     '-nostats',
     outputPath
   ]
+}
+
+function buildFrontAudioPlaylist(clips) {
+  const lines = sortClipsByName(clips).map((clip) => {
+    const filePath = path.resolve(clip.front.path).replace(/\\/g, '/').replace(/'/g, "'\\''")
+    return `file '${filePath}'`
+  })
+
+  return ['ffconcat version 1.0', ...lines].join(os.EOL)
+}
+
+async function createFrontAudioPlaylist(clips) {
+  const tempFolder = await getTempFolder()
+  const playlistPath = path.join(tempFolder, `front-audio-${crypto.randomUUID()}.ffconcat`)
+  await fs.writeFile(playlistPath, buildFrontAudioPlaylist(clips), 'utf8')
+  return playlistPath
 }
 
 function parseProgressLine(line, expectedDurationSeconds) {
@@ -537,43 +558,49 @@ async function mergeSegment(clips, options, onProgress, onProcess) {
   const tempFolder = await getTempFolder()
   const outputPath = path.join(tempFolder, `merged-${crypto.randomUUID()}.mp4`)
   const encoder = findEncoder(ffmpeg)
+  const frontAudioPlaylistPath = await createFrontAudioPlaylist(clips)
   let activeEncoder = encoder
-  let args = buildMergeArguments(clips, outputPath, activeEncoder.args, options)
-
-  onProgress({ phase: `Combining with ${activeEncoder.name}`, percent: 0 })
+  const mergeOptions = { ...options, frontAudioPlaylistPath }
+  let args = buildMergeArguments(clips, outputPath, activeEncoder.args, mergeOptions)
 
   try {
-    await runFfmpeg(
-      ffmpeg,
-      args,
-      clips.length * 60,
-      (percent) => onProgress({ phase: `Combining with ${activeEncoder.name}`, percent }),
-      onProcess
-    )
-  } catch (error) {
-    if (!activeEncoder.hardware || /cancelled/i.test(error.message)) {
-      throw error
+    onProgress({ phase: `Combining with ${activeEncoder.name}`, percent: 0 })
+
+    try {
+      await runFfmpeg(
+        ffmpeg,
+        args,
+        clips.length * 60,
+        (percent) => onProgress({ phase: `Combining with ${activeEncoder.name}`, percent }),
+        onProcess
+      )
+    } catch (error) {
+      if (!activeEncoder.hardware || /cancelled/i.test(error.message)) {
+        throw error
+      }
+
+      const softwareEncoder = findSoftwareEncoder(ffmpeg)
+
+      if (!softwareEncoder) {
+        throw error
+      }
+
+      activeEncoder = softwareEncoder
+      args = buildMergeArguments(clips, outputPath, activeEncoder.args, mergeOptions)
+      onProgress({ phase: 'GPU HEVC failed, retrying with software HEVC', percent: 0 })
+      await runFfmpeg(
+        ffmpeg,
+        args,
+        clips.length * 60,
+        (percent) => onProgress({ phase: `Combining with ${activeEncoder.name}`, percent }),
+        onProcess
+      )
     }
 
-    const softwareEncoder = findSoftwareEncoder(ffmpeg)
-
-    if (!softwareEncoder) {
-      throw error
-    }
-
-    activeEncoder = softwareEncoder
-    args = buildMergeArguments(clips, outputPath, activeEncoder.args, options)
-    onProgress({ phase: 'GPU HEVC failed, retrying with software HEVC', percent: 0 })
-    await runFfmpeg(
-      ffmpeg,
-      args,
-      clips.length * 60,
-      (percent) => onProgress({ phase: `Combining with ${activeEncoder.name}`, percent }),
-      onProcess
-    )
+    return outputPath
+  } finally {
+    await fs.rm(frontAudioPlaylistPath, { force: true })
   }
-
-  return outputPath
 }
 
 function sanitizeClipName(name) {
@@ -884,6 +911,7 @@ module.exports = {
   applyFilenameDateOverrides,
   buildMergeArguments,
   buildProcessedFilename,
+  buildFrontAudioPlaylist,
   buildThumbnailArguments,
   cleanupTemporaryFiles,
   discardTemporaryVideo,
