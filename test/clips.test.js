@@ -5,11 +5,13 @@ const test = require('node:test')
 
 const {
   SEGMENT_GAP_MS,
+  OUTLIER_DATE_GAP_MS,
   createClipRange,
   filterClips,
   groupSegments,
   pairCameraFiles,
   parseClipNumber,
+  reconcileClipTimeline,
   scanSource,
   toPublicSegment
 } = require('../src/lib/clips')
@@ -28,6 +30,13 @@ function cameraFile(name, time, camera) {
 
 function clipAt(time) {
   const front = cameraFile(`${time}.avi`, time, 'front')
+  return { recordedAt: front.recordedAt, front, rear: null, size: front.size }
+}
+
+function numberedClip(number, time) {
+  const name = `MOVI${String(number).padStart(4, '0')}.avi`
+  const front = cameraFile(name, time, 'front')
+  front.relativePath = name
   return { recordedAt: front.recordedAt, front, rear: null, size: front.size }
 }
 
@@ -73,6 +82,71 @@ test('reads the first and last numeric clip suffix for saved filenames', () => {
 
   assert.equal(parseClipNumber('MOVI0094.avi'), 94)
   assert.deepEqual(createClipRange(clips), { start: 94, end: 106 })
+})
+
+test('places a bad-date clip immediately before its consecutive successor', () => {
+  const clips = [
+    numberedClip(378, '2026-07-30T02:05:00Z'),
+    numberedClip(379, '2026-07-03T02:07:00Z'),
+    numberedClip(380, '2026-07-30T02:07:00Z'),
+    numberedClip(381, '2026-07-30T02:08:00Z')
+  ]
+  const segments = groupSegments(clips)
+
+  assert.equal(OUTLIER_DATE_GAP_MS, 12 * 60 * 60 * 1000)
+  assert.equal(segments.length, 1)
+  assert.deepEqual(segments[0].clips.map((clip) => clip.front.name), [
+    'MOVI0378.avi',
+    'MOVI0379.avi',
+    'MOVI0380.avi',
+    'MOVI0381.avi'
+  ])
+  assert.equal(clips[1].timelineAdjusted, true)
+  assert.equal(clips[1].timelineAt.toISOString(), '2026-07-30T02:06:00.000Z')
+  assert.equal(clips[1].recordedAt.toISOString(), '2026-07-03T02:07:00.000Z')
+})
+
+test('uses the inferred timeline when filtering a bad-date clip', () => {
+  const clips = [
+    numberedClip(379, '2026-07-03T02:07:00Z'),
+    numberedClip(380, '2026-07-30T02:07:00Z'),
+    numberedClip(381, '2026-07-30T02:08:00Z')
+  ]
+  reconcileClipTimeline(clips)
+  const filtered = filterClips(clips, {
+    mode: 'range',
+    startDate: '2026-07-30',
+    startTime: '02:00'
+  })
+
+  assert.equal(filtered.length, 3)
+  assert.equal(filtered[0].front.name, 'MOVI0379.avi')
+})
+
+test('keeps an inferred time after a date filter removes an anchoring neighbor', () => {
+  const clips = [
+    numberedClip(379, '2026-07-03T02:07:00Z'),
+    numberedClip(380, '2026-07-30T02:07:00Z'),
+    numberedClip(381, '2026-07-30T02:08:00Z')
+  ]
+  reconcileClipTimeline(clips)
+  const segments = groupSegments(clips.slice(0, 2))
+
+  assert.equal(segments.length, 1)
+  assert.equal(segments[0].clips[0].timelineAdjusted, true)
+})
+
+test('does not join ordinary consecutive filenames recorded days apart', () => {
+  const clips = [
+    numberedClip(378, '2026-07-03T02:06:00Z'),
+    numberedClip(379, '2026-07-03T02:07:00Z'),
+    numberedClip(380, '2026-07-30T02:07:00Z'),
+    numberedClip(381, '2026-07-30T02:08:00Z')
+  ]
+  const segments = groupSegments(clips)
+
+  assert.equal(segments.length, 2)
+  assert.equal(clips[1].timelineAdjusted, false)
 })
 
 test('filters inclusively from the selected local date and time', () => {

@@ -10,6 +10,7 @@ const state = {
   importStatus: null,
   processingView: 'all',
   expandedSegments: new Set(),
+  selectedSegmentIds: new Set(),
   toastTimer: null
 }
 
@@ -25,9 +26,21 @@ const loadingState = document.querySelector('#loading-state')
 const resultsHeading = document.querySelector('#results-heading')
 const resultsSummary = document.querySelector('#results-summary')
 const segmentsList = document.querySelector('#segments-list')
+const resultsControls = document.querySelector('#results-controls')
 const processingTabs = document.querySelector('#processing-tabs')
+const selectionToolbar = document.querySelector('#selection-toolbar')
+const selectionCount = document.querySelector('#selection-count')
+const selectVisibleButton = document.querySelector('#select-visible')
+const mergeSelectedButton = document.querySelector('#merge-selected')
+const processSelectedButton = document.querySelector('#process-selected')
+const unprocessSelectedButton = document.querySelector('#unprocess-selected')
+const deleteSelectedButton = document.querySelector('#delete-selected')
+const clearSelectionButton = document.querySelector('#clear-selection')
 const nameDialog = document.querySelector('#name-dialog')
 const nameForm = document.querySelector('#name-form')
+const nameEyebrow = document.querySelector('#name-eyebrow')
+const nameHeading = document.querySelector('#name-heading')
+const nameCopy = document.querySelector('#name-copy')
 const clipName = document.querySelector('#clip-name')
 const nameSuggestionsWrap = document.querySelector('#name-suggestions-wrap')
 const nameSuggestions = document.querySelector('#name-suggestions')
@@ -280,7 +293,12 @@ function createClipList(segment) {
     row.className = 'clip-row'
     const time = document.createElement('span')
     time.className = 'clip-time'
-    time.textContent = formatClock(clip.recordedAt)
+    time.textContent = formatClock(clip.timelineAt || clip.recordedAt)
+
+    if (clip.timelineAdjusted) {
+      time.classList.add('adjusted')
+      time.title = `Inferred from the next clip. Original modified time: ${new Date(clip.recordedAt).toLocaleString()}`
+    }
     const name = document.createElement('span')
     name.className = 'clip-name'
     name.textContent = clip.fileName
@@ -292,6 +310,10 @@ function createClipList(segment) {
     cameras.textContent = newCameras.length > 0
       ? `${cameraText} · New ${newCameras.join(' + ')}`
       : cameraText
+
+    if (clip.timelineAdjusted) {
+      cameras.textContent = `${cameras.textContent} · Time inferred`
+    }
     const processingButton = makeButton(
       clip.processed ? 'Processed ✓' : 'Mark processed',
       `mini-button clip-process-button${clip.processed ? ' active' : ''}`,
@@ -308,6 +330,25 @@ function createClipList(segment) {
 function renderSegment(segment) {
   const card = document.createElement('article')
   card.className = 'segment-card'
+  card.classList.toggle('selected', state.selectedSegmentIds.has(segment.id))
+  const selector = document.createElement('label')
+  selector.className = 'segment-select'
+  selector.title = 'Select this driving segment'
+  const checkbox = document.createElement('input')
+  checkbox.type = 'checkbox'
+  checkbox.checked = state.selectedSegmentIds.has(segment.id)
+  checkbox.setAttribute('aria-label', `Select segment from ${formatDate(segment.start)} at ${formatClock(segment.start)}`)
+  checkbox.addEventListener('change', () => {
+    if (checkbox.checked) {
+      state.selectedSegmentIds.add(segment.id)
+    } else {
+      state.selectedSegmentIds.delete(segment.id)
+    }
+
+    card.classList.toggle('selected', checkbox.checked)
+    renderSelectionControls()
+  })
+  selector.append(checkbox)
   const thumbnail = createThumbnail(segment)
 
   const timeBlock = document.createElement('div')
@@ -340,7 +381,7 @@ function renderSegment(segment) {
   const actions = document.createElement('div')
   actions.className = 'segment-actions'
   const playButton = makeButton('Play in VLC', 'secondary-button', () => playSegment(segment))
-  const mergeButton = makeButton('Merge & trim', 'primary-button', () => beginMerge(segment))
+  const mergeButton = makeButton('Merge & trim', 'primary-button', () => beginMerge([segment]))
   mergeButton.disabled = segment.pairedCount !== segment.clipCount
   mergeButton.title = mergeButton.disabled ? 'A rear recording is missing for one or more front clips.' : ''
   const clipsButton = makeButton(
@@ -367,7 +408,7 @@ function renderSegment(segment) {
   const clipList = createClipList(segment)
   actions.append(playButton, mergeButton, clipsButton, processingButton, deleteButton)
 
-  card.append(thumbnail, timeBlock, details, actions, clipList)
+  card.append(selector, thumbnail, timeBlock, details, actions, clipList)
   return card
 }
 
@@ -425,6 +466,60 @@ function getVisibleSegments() {
   return state.segments
 }
 
+function getSelectedSegments() {
+  return state.segments.filter((segment) => state.selectedSegmentIds.has(segment.id))
+}
+
+function createMergeSelection(segments) {
+  const orderedSegments = [...segments].sort((left, right) => new Date(left.start) - new Date(right.start))
+  const clips = orderedSegments.flatMap((segment) => segment.clips)
+  const filenameClip = clips[Math.min(1, clips.length - 1)]
+  const firstRange = orderedSegments[0]?.clipRange
+  const lastRange = orderedSegments[orderedSegments.length - 1]?.clipRange
+
+  return {
+    segmentIds: orderedSegments.map((segment) => segment.id),
+    segmentCount: orderedSegments.length,
+    filenameDate: filenameClip?.recordedAt || orderedSegments[0]?.filenameDate,
+    clipRange: firstRange && lastRange
+      ? { start: firstRange.start, end: lastRange.end }
+      : null,
+    durationMs: clips.length * 60 * 1000
+  }
+}
+
+function renderSelectionControls() {
+  const selectedSegments = getSelectedSegments()
+  const visibleSegments = getVisibleSegments()
+  const allVisibleSelected = visibleSegments.length > 0 && visibleSegments.every((segment) => state.selectedSegmentIds.has(segment.id))
+  const canMerge = selectedSegments.length >= 2 && selectedSegments.every((segment) => segment.pairedCount === segment.clipCount)
+  const segmentWord = selectedSegments.length === 1 ? 'segment' : 'segments'
+
+  selectionToolbar.classList.toggle('hidden', selectedSegments.length === 0)
+  selectionCount.textContent = `${selectedSegments.length} ${segmentWord} selected`
+  mergeSelectedButton.disabled = !canMerge
+  mergeSelectedButton.title = selectedSegments.length < 2
+    ? 'Select at least two segments to combine them.'
+    : canMerge ? '' : 'Every selected front clip needs a matching rear clip.'
+  selectVisibleButton.disabled = visibleSegments.length === 0
+  selectVisibleButton.textContent = allVisibleSelected ? 'Clear visible' : 'Select visible'
+}
+
+function toggleVisibleSelection() {
+  const visibleSegments = getVisibleSegments()
+  const allVisibleSelected = visibleSegments.length > 0 && visibleSegments.every((segment) => state.selectedSegmentIds.has(segment.id))
+
+  for (const segment of visibleSegments) {
+    if (allVisibleSelected) {
+      state.selectedSegmentIds.delete(segment.id)
+    } else {
+      state.selectedSegmentIds.add(segment.id)
+    }
+  }
+
+  renderResults()
+}
+
 function updateProcessingTabs() {
   const processedCount = state.segments.filter((segment) => segment.processed).length
   const unprocessedCount = state.segments.length - processedCount
@@ -441,6 +536,8 @@ function updateProcessingTabs() {
 
 function applyScanResult(result) {
   state.segments = result.segments
+  const availableIds = new Set(result.segments.map((segment) => segment.id))
+  state.selectedSegmentIds = new Set([...state.selectedSegmentIds].filter((segmentId) => availableIds.has(segmentId)))
   state.totals = result.totals
   state.sourceIsLibrary = result.sourceIsLibrary
   state.importStatus = result.importStatus
@@ -483,13 +580,14 @@ function renderResults() {
 
   if (!state.rootPath) {
     resultsHeading.classList.add('hidden')
-    processingTabs.classList.add('hidden')
+    resultsControls.classList.add('hidden')
+    selectionToolbar.classList.add('hidden')
     emptyState.classList.remove('hidden')
     return
   }
 
   resultsHeading.classList.remove('hidden')
-  processingTabs.classList.remove('hidden')
+  resultsControls.classList.remove('hidden')
   updateProcessingTabs()
   const visibleSegments = getVisibleSegments()
 
@@ -518,12 +616,15 @@ function renderResults() {
   const segmentWord = state.segments.length === 1 ? 'segment' : 'segments'
   const processedSegments = state.segments.filter((segment) => segment.processed).length
   resultsSummary.textContent = `${totals.visible} of ${totals.front} front clips · ${totals.rear} rear clips · ${state.segments.length} ${segmentWord} · ${processedSegments} processed`
+  renderSelectionControls()
 }
 
 function setLoading() {
   importBanner.classList.add('hidden')
   emptyState.classList.add('hidden')
   resultsHeading.classList.add('hidden')
+  resultsControls.classList.add('hidden')
+  selectionToolbar.classList.add('hidden')
   segmentsList.replaceChildren()
   loadingState.classList.remove('hidden')
 }
@@ -573,6 +674,7 @@ async function chooseSource() {
 
     if (selectedPath !== state.rootPath) {
       state.expandedSegments.clear()
+      state.selectedSegmentIds.clear()
       state.processingView = 'all'
     }
 
@@ -594,12 +696,18 @@ async function playSegment(segment) {
   }
 }
 
-async function askForName(segment) {
+async function askForName(selection) {
   const suggestions = await window.dashcam.getNameSuggestions().catch(() => [])
 
   return new Promise((resolve) => {
-    const prefix = formatFilenamePrefix(segment.filenameDate || segment.start)
-    const range = formatClipRange(segment.clipRange)
+    const prefix = formatFilenamePrefix(selection.filenameDate)
+    const range = formatClipRange(selection.clipRange)
+    const multiple = selection.segmentCount > 1
+    nameEyebrow.textContent = multiple ? `Combine ${selection.segmentCount} segments` : 'Combine segment'
+    nameHeading.textContent = multiple ? 'Name the combined clip' : 'Name this clip'
+    nameCopy.textContent = multiple
+      ? 'The selected segments will be joined in chronological order. The second clip’s modified time and the full clip-number range will be added automatically.'
+      : 'The second clip’s modified time and the clip-number range will be added automatically.'
     clipName.value = ''
     mirrorRear.checked = true
     filenamePreview.textContent = `${prefix} …${range}.mp4`
@@ -679,19 +787,22 @@ function closeProgress() {
   }
 }
 
-async function beginMerge(segment) {
-  const options = await askForName(segment)
+async function beginMerge(segments) {
+  const selection = createMergeSelection(segments)
+  const options = await askForName(selection)
 
   if (!options) {
     return
   }
 
-  openProgress('Combining front and rear clips')
+  openProgress(selection.segmentCount > 1 ? `Combining ${selection.segmentCount} segments` : 'Combining front and rear clips')
 
   try {
-    const output = await window.dashcam.mergeSegment(segment.id, options)
+    const output = await window.dashcam.mergeSegments(selection.segmentIds, options)
     closeProgress()
-    openTrim(output, segment.durationMs / 1000)
+    state.selectedSegmentIds.clear()
+    renderSelectionControls()
+    openTrim(output, (output.durationMs || selection.durationMs) / 1000)
   } catch (error) {
     closeProgress()
     showError(error)
@@ -808,6 +919,70 @@ async function deleteSegment(segment) {
     }
   } catch (error) {
     await scan(false)
+    showError(error)
+  }
+}
+
+async function mergeSelectedSegments() {
+  const segments = getSelectedSegments()
+
+  if (segments.length < 2) {
+    return
+  }
+
+  await beginMerge(segments)
+}
+
+async function deleteSelectedSegments() {
+  const segmentIds = getSelectedSegments().map((segment) => segment.id)
+
+  if (segmentIds.length === 0) {
+    return
+  }
+
+  try {
+    const response = await window.dashcam.deleteSegments(segmentIds)
+
+    if (response.deleted && response.result) {
+      state.selectedSegmentIds.clear()
+      applyScanResult(response.result)
+      renderResults()
+      showToast(`${segmentIds.length} segments were moved to the Recycle Bin or Trash.`)
+    }
+  } catch (error) {
+    await scan(false)
+    showError(error)
+  }
+}
+
+async function setSelectedProcessingState(processed) {
+  const segmentIds = getSelectedSegments().map((segment) => segment.id)
+
+  if (segmentIds.length === 0) {
+    return
+  }
+
+  const buttons = [processSelectedButton, unprocessSelectedButton]
+  buttons.forEach((button) => { button.disabled = true })
+
+  try {
+    const updatedSegments = await window.dashcam.setProcessingState({
+      scope: 'segments',
+      segmentIds,
+      processed
+    })
+    const updates = new Map(updatedSegments.map((segment) => [segment.id, segment]))
+    state.segments = state.segments.map((segment) => updates.get(segment.id) || segment)
+    state.selectedSegmentIds.clear()
+
+    if (state.totals) {
+      state.totals.processedVisible = state.segments.reduce((total, segment) => total + segment.processedCount, 0)
+    }
+
+    renderResults()
+    showToast(processed ? `${segmentIds.length} segments marked processed.` : `${segmentIds.length} segments marked unprocessed.`)
+  } catch (error) {
+    buttons.forEach((button) => { button.disabled = false })
     showError(error)
   }
 }
@@ -987,6 +1162,15 @@ scanButton.addEventListener('click', () => scan())
 chooseLibraryButton.addEventListener('click', chooseServerLibrary)
 viewLibraryButton.addEventListener('click', viewServerLibrary)
 document.querySelector('#import-button').addEventListener('click', importNewClips)
+selectVisibleButton.addEventListener('click', toggleVisibleSelection)
+mergeSelectedButton.addEventListener('click', mergeSelectedSegments)
+processSelectedButton.addEventListener('click', () => setSelectedProcessingState(true))
+unprocessSelectedButton.addEventListener('click', () => setSelectedProcessingState(false))
+deleteSelectedButton.addEventListener('click', deleteSelectedSegments)
+clearSelectionButton.addEventListener('click', () => {
+  state.selectedSegmentIds.clear()
+  renderResults()
+})
 for (const tab of document.querySelectorAll('.processing-tab')) {
   tab.addEventListener('click', () => {
     state.processingView = tab.dataset.processingView

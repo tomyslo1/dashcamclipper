@@ -5,6 +5,7 @@ const { readProcessingMetadata } = require('./processing-metadata')
 
 const VIDEO_EXTENSIONS = new Set(['.avi', '.mp4', '.mov', '.mkv'])
 const SEGMENT_GAP_MS = 3 * 60 * 1000
+const OUTLIER_DATE_GAP_MS = 12 * 60 * 60 * 1000
 
 async function findCameraFolders(rootPath) {
   const entries = await fs.readdir(rootPath, { withFileTypes: true })
@@ -155,11 +156,13 @@ function filterClips(clips, filters = {}) {
   }
 
   return clips.filter((clip) => {
-    if (clip.recordedAt < start) {
+    const timelineAt = clip.timelineAt || clip.recordedAt
+
+    if (timelineAt < start) {
       return false
     }
 
-    if (end && clip.recordedAt > end) {
+    if (end && timelineAt > end) {
       return false
     }
 
@@ -170,6 +173,81 @@ function filterClips(clips, filters = {}) {
 function parseClipNumber(filename) {
   const match = path.basename(filename, path.extname(filename)).match(/(\d+)$/)
   return match ? Number(match[1]) : null
+}
+
+function clipSequenceIdentity(clip) {
+  const relativePath = (clip.front.relativePath || clip.front.name).split(path.sep).join('/')
+  const extension = path.posix.extname(relativePath)
+  const directory = path.posix.dirname(relativePath)
+  const basename = path.posix.basename(relativePath, extension)
+  const match = basename.match(/^(.*?)(\d+)$/)
+
+  if (!match) {
+    return null
+  }
+
+  return {
+    group: `${directory}/${match[1].toLowerCase()}${extension.toLowerCase()}`,
+    number: Number(match[2])
+  }
+}
+
+function reconcileClipTimeline(clips, maximumGapMs = SEGMENT_GAP_MS) {
+  const sequences = new Map()
+
+  for (const clip of clips) {
+    clip.timelineAt = new Date(clip.recordedAt)
+    clip.timelineAdjusted = false
+    const identity = clipSequenceIdentity(clip)
+
+    if (!identity) {
+      continue
+    }
+
+    const sequence = sequences.get(identity.group) || new Map()
+    const matches = sequence.get(identity.number) || []
+    matches.push(clip)
+    sequence.set(identity.number, matches)
+    sequences.set(identity.group, sequence)
+  }
+
+  for (const sequence of sequences.values()) {
+    const numbers = [...sequence.keys()].sort((left, right) => right - left)
+
+    for (const number of numbers) {
+      const matches = sequence.get(number)
+      const successorMatches = sequence.get(number + 1)
+
+      if (matches.length !== 1 || successorMatches?.length !== 1) {
+        continue
+      }
+
+      const clip = matches[0]
+      const successor = successorMatches[0]
+      const dateGap = successor.timelineAt - clip.recordedAt
+
+      if (dateGap < OUTLIER_DATE_GAP_MS) {
+        continue
+      }
+
+      const predecessorMatches = sequence.get(number - 1)
+      const followingMatches = sequence.get(number + 2)
+      const predecessor = predecessorMatches?.length === 1 ? predecessorMatches[0] : null
+      const following = followingMatches?.length === 1 ? followingMatches[0] : null
+      const currentContinuesPredecessor = predecessor && Math.abs(clip.recordedAt - predecessor.timelineAt) <= maximumGapMs
+      const predecessorAnchorsSequence = predecessor && Math.abs(successor.timelineAt - predecessor.timelineAt) <= maximumGapMs * 2
+      const followingAnchorsSequence = following && Math.abs(following.timelineAt - successor.timelineAt) <= maximumGapMs
+
+      if (currentContinuesPredecessor || (!predecessorAnchorsSequence && !followingAnchorsSequence)) {
+        continue
+      }
+
+      clip.timelineAt = new Date(successor.timelineAt - 60 * 1000)
+      clip.timelineAdjusted = true
+    }
+  }
+
+  return clips
 }
 
 function createClipRange(clips) {
@@ -191,11 +269,14 @@ function createSegment(clips) {
 
   const segment = {
     id: crypto.createHash('sha1').update(fingerprint).digest('hex').slice(0, 16),
-    start: firstClip.recordedAt,
-    end: lastClip.recordedAt,
+    start: firstClip.timelineAt || firstClip.recordedAt,
+    end: lastClip.timelineAt || lastClip.recordedAt,
     filenameDate: filenameClip.recordedAt,
     clipRange: createClipRange(clips),
-    durationMs: Math.max(60 * 1000, lastClip.recordedAt - firstClip.recordedAt + 60 * 1000),
+    durationMs: Math.max(
+      60 * 1000,
+      (lastClip.timelineAt || lastClip.recordedAt) - (firstClip.timelineAt || firstClip.recordedAt) + 60 * 1000
+    ),
     clipCount: clips.length,
     pairedCount: clips.filter((clip) => clip.rear).length,
     totalSize: clips.reduce((total, clip) => total + clip.size, 0),
@@ -243,14 +324,17 @@ function pathsEqual(leftPath, rightPath) {
 }
 
 function groupSegments(clips, maximumGapMs = SEGMENT_GAP_MS) {
-  const sortedClips = [...clips].sort((left, right) => left.recordedAt - right.recordedAt)
+  if (clips.some((clip) => !clip.timelineAt)) {
+    reconcileClipTimeline(clips, maximumGapMs)
+  }
+  const sortedClips = [...clips].sort((left, right) => left.timelineAt - right.timelineAt)
   const groups = []
   let currentGroup = []
 
   for (const clip of sortedClips) {
     const previousClip = currentGroup[currentGroup.length - 1]
 
-    if (previousClip && clip.recordedAt - previousClip.recordedAt > maximumGapMs) {
+    if (previousClip && clip.timelineAt - previousClip.timelineAt > maximumGapMs) {
       groups.push(createSegment(currentGroup))
       currentGroup = []
     }
@@ -315,6 +399,7 @@ async function scanSource(rootPath, filters = {}, libraryRootPath = rootPath) {
   }
 
   const pairing = pairCameraFiles(frontFiles, rearFiles)
+  reconcileClipTimeline(pairing.clips)
 
   for (const clip of pairing.clips) {
     clip.newFront = !sourceIsLibrary && !libraryFrontKeys.has(clip.front.relativeKey)
@@ -366,6 +451,8 @@ function toPublicSegment(segment) {
     clips: segment.clips.map((clip) => ({
       key: clip.key,
       recordedAt: clip.recordedAt.toISOString(),
+      timelineAt: (clip.timelineAt || clip.recordedAt).toISOString(),
+      timelineAdjusted: clip.timelineAdjusted,
       fileName: clip.front.name,
       hasRear: Boolean(clip.rear),
       processed: clip.processed,
@@ -379,6 +466,7 @@ function toPublicSegment(segment) {
 
 module.exports = {
   SEGMENT_GAP_MS,
+  OUTLIER_DATE_GAP_MS,
   createClipRange,
   filterClips,
   applyProcessingMetadata,
@@ -388,6 +476,7 @@ module.exports = {
   parseClipNumber,
   parseLocalDate,
   readVideoFiles,
+  reconcileClipTimeline,
   refreshSegmentProcessing,
   refreshSegmentImport,
   pathsEqual,

@@ -18,7 +18,7 @@ Server library/
 
 A microSD card source only needs `DCIMA` and `DCIMB`; Dashcam Clipper never creates its metadata folder on the card. Subfolders inside both camera folders are scanned too. AVI, MP4, MOV, and MKV files are supported.
 
-Clip modification times are used as recording times. Consecutive clips belong to one driving segment until there is a gap longer than three minutes. Front and rear clips are paired by relative filename first, then by a recording time within 30 seconds.
+Clip modification times are used as recording times. Consecutive clips belong to one driving segment until there is a gap longer than three minutes. If one clip has a modification time at least 12 hours too old but breaks an otherwise continuous numbered sequence, the app places it one minute before its successor without changing the file. These inferred times are identified in the expanded clip list. Front and rear clips are paired by relative filename first, then by a recording time within 30 seconds.
 
 ## Requirements
 
@@ -69,10 +69,11 @@ corepack pnpm start
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging.
    - **Delete** asks twice, then moves both camera files to the Recycle Bin or Trash.
-7. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
-8. Switch between **All**, **Unprocessed**, and **Processed** above the segment list.
-9. Name a merged clip and set its start and end in the built-in trimming screen. The naming dialog offers up to five frequently used names from existing processed MP4 files.
-10. Save it to the archive.
+7. Select multiple segments with their checkboxes to merge them into one video, mark them processed or unprocessed together, or delete them with two confirmations. **Select visible** selects the current tab at once.
+8. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
+9. Switch between **All**, **Unprocessed**, and **Processed** above the segment list.
+10. Name a merged clip and set its start and end in the built-in trimming screen. The naming dialog offers up to five frequently used names from existing processed MP4 files.
+11. Save it to the archive.
 
 Finished clips use this filename:
 

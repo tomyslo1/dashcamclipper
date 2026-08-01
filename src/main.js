@@ -12,6 +12,7 @@ const {
 } = require('electron')
 
 const {
+  createClipRange,
   findCameraFolders,
   refreshSegmentProcessing,
   scanSource,
@@ -108,6 +109,16 @@ function getSegment(segmentId) {
   return segment
 }
 
+function getSegments(segmentIds) {
+  if (!Array.isArray(segmentIds) || segmentIds.length === 0) {
+    throw new Error('Select at least one driving segment.')
+  }
+
+  return [...new Set(segmentIds)]
+    .map((segmentId) => getSegment(segmentId))
+    .sort((left, right) => left.start - right.start)
+}
+
 function sendProgress(progress) {
   mainWindow?.webContents.send('media-progress', progress)
 }
@@ -179,12 +190,17 @@ async function updateProcessingState(options) {
     throw new Error('The requested processing state is invalid.')
   }
 
-  const segment = getSegment(options.segmentId)
+  let segment = null
+  let affectedSegments = []
   let clipKeys
 
   if (options.scope === 'segment') {
+    segment = getSegment(options.segmentId)
+    affectedSegments = [segment]
     clipKeys = segment.clips.map((clip) => clip.key)
   } else if (options.scope === 'clip') {
+    segment = getSegment(options.segmentId)
+    affectedSegments = [segment]
     const clip = segment.clips.find((item) => item.key === options.clipKey)
 
     if (!clip) {
@@ -192,6 +208,9 @@ async function updateProcessingState(options) {
     }
 
     clipKeys = [clip.key]
+  } else if (options.scope === 'segments') {
+    affectedSegments = getSegments(options.segmentIds)
+    clipKeys = affectedSegments.flatMap((item) => item.clips.map((clip) => clip.key))
   } else {
     throw new Error('Choose a segment or clip to update.')
   }
@@ -212,6 +231,10 @@ async function updateProcessingState(options) {
     }
 
     refreshSegmentProcessing(currentSegment)
+  }
+
+  if (options.scope === 'segments') {
+    return affectedSegments.map(toPublicSegment)
   }
 
   return toPublicSegment(segment)
@@ -291,6 +314,110 @@ async function importNewClips() {
   } finally {
     importInProgress = false
     importCancelled = false
+  }
+}
+
+async function mergeSelectedSegments(segmentIds, options) {
+  if (activeProcess) {
+    throw new Error('Another media job is already running.')
+  }
+
+  const segments = getSegments(segmentIds)
+  const clips = segments.flatMap((segment) => segment.clips)
+  const name = typeof options?.name === 'string' ? options.name.trim() : ''
+
+  if (!name) {
+    throw new Error('Enter a name for the clip.')
+  }
+
+  const outputPath = await mergeSegment(
+    clips,
+    { mirrorRear: options.mirrorRear !== false },
+    sendProgress,
+    setActiveProcess
+  )
+  const outputId = require('node:crypto').randomUUID()
+  const filenameClip = clips[Math.min(1, clips.length - 1)]
+  const filenameDate = filenameClip.recordedAt
+  const clipRange = createClipRange(clips)
+
+  temporaryOutputs.set(outputId, {
+    path: outputPath,
+    name,
+    filenameDate,
+    clipRange
+  })
+
+  return {
+    outputId,
+    videoUrl: pathToFileURL(outputPath).href,
+    name,
+    filenameDate: filenameDate.toISOString(),
+    clipRange,
+    durationMs: clips.length * 60 * 1000
+  }
+}
+
+async function deleteSelectedSegments(segmentIds) {
+  if (activeProcess || importInProgress) {
+    throw new Error('Wait for the current media or import job to finish before deleting clips.')
+  }
+
+  const segments = getSegments(segmentIds)
+  const clips = segments.flatMap((segment) => segment.clips)
+  const first = segments[0]
+  const last = segments[segments.length - 1]
+  const start = first.start.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+  const end = last.end.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+  const segmentWord = segments.length === 1 ? 'segment' : 'segments'
+  const firstConfirmation = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: `Delete ${segments.length} driving ${segmentWord}?`,
+    message: `Delete the selected clips from ${start} to ${end}?`,
+    detail: `${clips.length} front clips and ${clips.filter((clip) => clip.rear).length} rear clips will be removed from the source.`,
+    buttons: ['Continue', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true
+  })
+
+  if (firstConfirmation.response !== 0) {
+    return { deleted: false }
+  }
+
+  const secondConfirmation = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'Double-check deletion',
+    message: `Are you sure you want to delete ${segments.length} selected ${segmentWord}?`,
+    detail: 'Dashcam Clipper will move every selected front and rear clip to the Recycle Bin or Trash when the source supports it.',
+    buttons: [`Delete ${segmentWord}`, 'Keep clips'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true
+  })
+
+  if (secondConfirmation.response !== 0) {
+    return { deleted: false }
+  }
+
+  const filePaths = [...new Set(clips.flatMap((clip) => [clip.front.path, clip.rear?.path]).filter(Boolean))]
+  const failures = []
+
+  for (const filePath of filePaths) {
+    try {
+      await shell.trashItem(filePath)
+    } catch (error) {
+      failures.push({ filePath, message: error.message })
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`${filePaths.length - failures.length} files were deleted, but ${failures.length} could not be removed. Scan again to see what remains.`)
+  }
+
+  return {
+    deleted: true,
+    result: currentRootPath ? await updateScan(currentRootPath, currentFilters) : null
   }
 }
 
@@ -409,40 +536,7 @@ function registerHandlers() {
 
   ipcMain.handle('get-name-suggestions', () => getProcessedNameSuggestions())
 
-  ipcMain.handle('merge-segment', async (_event, segmentId, options) => {
-    if (activeProcess) {
-      throw new Error('Another media job is already running.')
-    }
-
-    const segment = getSegment(segmentId)
-    const name = typeof options?.name === 'string' ? options.name.trim() : ''
-
-    if (!name) {
-      throw new Error('Enter a name for the clip.')
-    }
-
-    const outputPath = await mergeSegment(
-      segment.clips,
-      { mirrorRear: options.mirrorRear !== false },
-      sendProgress,
-      setActiveProcess
-    )
-    const outputId = require('node:crypto').randomUUID()
-
-    temporaryOutputs.set(outputId, {
-      path: outputPath,
-      segmentId,
-      name
-    })
-
-    return {
-      outputId,
-      videoUrl: pathToFileURL(outputPath).href,
-      name,
-      filenameDate: segment.filenameDate.toISOString(),
-      clipRange: segment.clipRange
-    }
-  })
+  ipcMain.handle('merge-segments', (_event, segmentIds, options) => mergeSelectedSegments(segmentIds, options))
 
   ipcMain.handle('cancel-media-job', () => {
     if (activeProcess) {
@@ -479,11 +573,10 @@ function registerHandlers() {
       throw new Error('The temporary video is no longer available.')
     }
 
-    const segment = getSegment(output.segmentId)
     const destinationPath = await saveTrimmedVideo({
       sourcePath: output.path,
-      filenameDate: segment.filenameDate,
-      clipRange: segment.clipRange,
+      filenameDate: output.filenameDate,
+      clipRange: output.clipRange,
       name: output.name,
       start: options.start,
       end: options.end
@@ -562,6 +655,8 @@ function registerHandlers() {
 
     return { deleted: true }
   })
+
+  ipcMain.handle('delete-segments', (_event, segmentIds) => deleteSelectedSegments(segmentIds))
 }
 
 app.setName('Dashcam Clipper')

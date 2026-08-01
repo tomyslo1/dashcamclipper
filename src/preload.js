@@ -13,12 +13,13 @@ contextBridge.exposeInMainWorld('dashcam', {
   setProcessingState: (options) => ipcRenderer.invoke('set-processing-state', options),
   importNewClips: () => ipcRenderer.invoke('import-new-clips'),
   getNameSuggestions: () => ipcRenderer.invoke('get-name-suggestions'),
-  mergeSegment: (segmentId, options) => ipcRenderer.invoke('merge-segment', segmentId, options),
+  mergeSegments: (segmentIds, options) => ipcRenderer.invoke('merge-segments', segmentIds, options),
   cancelMediaJob: () => ipcRenderer.invoke('cancel-media-job'),
   openOutputInVlc: (outputId) => ipcRenderer.invoke('open-output-in-vlc', outputId),
   saveTrimmedVideo: (options) => ipcRenderer.invoke('save-trimmed-video', options),
   discardOutput: (outputId) => ipcRenderer.invoke('discard-output', outputId),
   deleteSegment: (segmentId) => ipcRenderer.invoke('delete-segment', segmentId),
+  deleteSegments: (segmentIds) => ipcRenderer.invoke('delete-segments', segmentIds),
   onMediaProgress: (callback) => {
     const listener = (_event, progress) => callback(progress)
     ipcRenderer.on('media-progress', listener)

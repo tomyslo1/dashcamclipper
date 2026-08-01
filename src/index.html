@@ -115,16 +115,30 @@
             <p id="results-summary"></p>
           </div>
 
-          <div id="processing-tabs" class="processing-tabs hidden" role="tablist" aria-label="Processing status">
-            <button class="processing-tab active" data-processing-view="all" type="button" role="tab" aria-selected="true">
-              All <span id="all-count">0</span>
-            </button>
-            <button class="processing-tab" data-processing-view="unprocessed" type="button" role="tab" aria-selected="false">
-              Unprocessed <span id="unprocessed-count">0</span>
-            </button>
-            <button class="processing-tab" data-processing-view="processed" type="button" role="tab" aria-selected="false">
-              Processed <span id="processed-count">0</span>
-            </button>
+          <div id="results-controls" class="results-controls hidden">
+            <div id="processing-tabs" class="processing-tabs" role="tablist" aria-label="Processing status">
+              <button class="processing-tab active" data-processing-view="all" type="button" role="tab" aria-selected="true">
+                All <span id="all-count">0</span>
+              </button>
+              <button class="processing-tab" data-processing-view="unprocessed" type="button" role="tab" aria-selected="false">
+                Unprocessed <span id="unprocessed-count">0</span>
+              </button>
+              <button class="processing-tab" data-processing-view="processed" type="button" role="tab" aria-selected="false">
+                Processed <span id="processed-count">0</span>
+              </button>
+            </div>
+            <button id="select-visible" class="text-button" type="button">Select visible</button>
+          </div>
+
+          <div id="selection-toolbar" class="selection-toolbar hidden">
+            <strong id="selection-count">0 selected</strong>
+            <div class="selection-actions">
+              <button id="merge-selected" class="primary-button" type="button">Merge &amp; trim</button>
+              <button id="process-selected" class="secondary-button" type="button">Mark processed</button>
+              <button id="unprocess-selected" class="secondary-button" type="button">Mark unprocessed</button>
+              <button id="delete-selected" class="text-button danger-text" type="button">Delete</button>
+              <button id="clear-selection" class="text-button" type="button">Clear</button>
+            </div>
           </div>
 
           <div id="empty-state" class="empty-state">
@@ -199,12 +213,12 @@
       <form id="name-form">
         <div class="modal-heading">
           <div>
-            <span class="eyebrow">Combine segment</span>
-            <h2>Name this clip</h2>
+            <span id="name-eyebrow" class="eyebrow">Combine segment</span>
+            <h2 id="name-heading">Name this clip</h2>
           </div>
           <button class="icon-button" id="name-close" type="button" aria-label="Close">×</button>
         </div>
-        <p class="modal-copy">The second clip's modified time and the clip-number range will be added automatically.</p>
+        <p id="name-copy" class="modal-copy">The second clip's modified time and the clip-number range will be added automatically.</p>
         <label class="full-field">
           <span>Clip name</span>
           <input id="clip-name" type="text" maxlength="100" placeholder="Drive through the mountains" required autocomplete="off">
