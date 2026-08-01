@@ -90,6 +90,12 @@ button:disabled {
   letter-spacing: -0.02em;
 }
 
+.app-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .app-header p {
   margin-top: 3px;
   color: var(--text-muted);
@@ -98,6 +104,40 @@ button:disabled {
 
 .header-button {
   margin-left: auto;
+}
+
+.update-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--border));
+  border-radius: 20px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.update-button:hover {
+  background: var(--accent-fill);
+  color: #ffffff;
+}
+
+.update-button svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+@media (prefers-color-scheme: dark) {
+  .update-button:hover {
+    color: #1b2115;
+  }
 }
 
 .brand-mark {
@@ -566,6 +606,65 @@ input:focus {
 .segments-list {
   display: grid;
   gap: 10px;
+}
+
+.saved-videos-list {
+  display: grid;
+  gap: 10px;
+}
+
+.saved-video-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 17px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent-bright);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: 0 5px 18px rgba(25, 31, 22, 0.04);
+}
+
+.saved-video-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+}
+
+.saved-video-icon::after {
+  width: 0;
+  height: 0;
+  margin-left: 3px;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 11px solid var(--accent);
+  content: "";
+}
+
+.saved-video-details {
+  min-width: 0;
+}
+
+.saved-video-details strong,
+.saved-video-details span {
+  display: block;
+}
+
+.saved-video-details strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-video-details span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .segment-card {
@@ -1298,6 +1397,15 @@ input[type="range"] {
   .segment-select {
     grid-column: 1;
     grid-row: 1 / 3;
+  }
+
+  .saved-video-card {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .saved-video-card .secondary-button {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .selection-toolbar {

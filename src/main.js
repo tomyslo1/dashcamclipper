@@ -8,6 +8,7 @@ const {
   ipcMain,
   Menu,
   nativeTheme,
+  net,
   shell
 } = require('electron')
 
@@ -28,8 +29,10 @@ const {
   findVlc,
   generateSegmentThumbnail,
   getProcessedNameSuggestions,
+  listProcessedVideos,
   mergeSegment,
   playFileInVlc,
+  playProcessedVideo,
   playSegmentInVlc,
   saveTrimmedVideo,
   setToolOverrides,
@@ -53,6 +56,8 @@ const {
   setClipsProcessed
 } = require('./lib/processing-metadata')
 
+const { buildUpdateStatus, isReleaseUrl } = require('./lib/update-check')
+
 let mainWindow = null
 let activeProcess = null
 let currentRootPath = null
@@ -71,6 +76,47 @@ let librarySettings = {
 }
 const segmentsById = new Map()
 const temporaryOutputs = new Map()
+let updateStatus = {
+  available: false,
+  currentVersion: '',
+  latestVersion: '',
+  releaseUrl: ''
+}
+
+async function checkForUpdates() {
+  const currentVersion = app.getVersion()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
+
+  try {
+    const response = await net.fetch('https://api.github.com/repos/tomyslo1/dashcamclipper/releases/latest', {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': `Dashcam-Clipper/${currentVersion}`,
+        'X-GitHub-Api-Version': '2026-03-10'
+      },
+      signal: controller.signal
+    })
+
+    if (!response.ok) {
+      return updateStatus
+    }
+
+    updateStatus = buildUpdateStatus(currentVersion, await response.json())
+    mainWindow?.webContents.send('update-status', updateStatus)
+  } catch {
+    updateStatus = {
+      available: false,
+      currentVersion,
+      latestVersion: '',
+      releaseUrl: ''
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+
+  return updateStatus
+}
 
 function createWindow() {
   nativeTheme.themeSource = 'system'
@@ -92,6 +138,9 @@ function createWindow() {
   })
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'))
+  mainWindow.webContents.once('did-finish-load', () => {
+    mainWindow.webContents.send('update-status', updateStatus)
+  })
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -551,6 +600,21 @@ function registerHandlers() {
 
   ipcMain.handle('get-name-suggestions', () => getProcessedNameSuggestions())
 
+  ipcMain.handle('list-processed-videos', () => listProcessedVideos())
+
+  ipcMain.handle('play-processed-video', (_event, fileName) => playProcessedVideo(fileName))
+
+  ipcMain.handle('get-update-status', () => updateStatus)
+
+  ipcMain.handle('open-update-release', async () => {
+    if (!updateStatus.available || !isReleaseUrl(updateStatus.releaseUrl)) {
+      return false
+    }
+
+    await shell.openExternal(updateStatus.releaseUrl)
+    return true
+  })
+
   ipcMain.handle('merge-segments', (_event, segmentIds, options) => mergeSelectedSegments(segmentIds, options))
 
   ipcMain.handle('cancel-media-job', () => {
@@ -695,6 +759,7 @@ app.whenReady().then(async () => {
   await cleanupTemporaryFiles().catch(() => {})
   registerHandlers()
   createWindow()
+  checkForUpdates()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

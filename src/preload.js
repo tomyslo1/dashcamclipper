@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('dashcam', {
   setProcessingState: (options) => ipcRenderer.invoke('set-processing-state', options),
   importNewClips: () => ipcRenderer.invoke('import-new-clips'),
   getNameSuggestions: () => ipcRenderer.invoke('get-name-suggestions'),
+  listProcessedVideos: () => ipcRenderer.invoke('list-processed-videos'),
+  playProcessedVideo: (fileName) => ipcRenderer.invoke('play-processed-video', fileName),
+  getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
+  openUpdateRelease: () => ipcRenderer.invoke('open-update-release'),
   mergeSegments: (segmentIds, options) => ipcRenderer.invoke('merge-segments', segmentIds, options),
   cancelMediaJob: () => ipcRenderer.invoke('cancel-media-job'),
   openOutputInVlc: (outputId) => ipcRenderer.invoke('open-output-in-vlc', outputId),
@@ -24,5 +28,10 @@ contextBridge.exposeInMainWorld('dashcam', {
     const listener = (_event, progress) => callback(progress)
     ipcRenderer.on('media-progress', listener)
     return () => ipcRenderer.removeListener('media-progress', listener)
+  },
+  onUpdateStatus: (callback) => {
+    const listener = (_event, status) => callback(status)
+    ipcRenderer.on('update-status', listener)
+    return () => ipcRenderer.removeListener('update-status', listener)
   }
 })

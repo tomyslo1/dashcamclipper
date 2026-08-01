@@ -1,4 +1,7 @@
 const assert = require('node:assert/strict')
+const fs = require('node:fs/promises')
+const os = require('node:os')
+const path = require('node:path')
 const test = require('node:test')
 
 const {
@@ -8,7 +11,9 @@ const {
   buildThumbnailArguments,
   extractProcessedClipName,
   formatFilenameDate,
+  listProcessedVideos,
   parseProgressLine,
+  processedVideoPath,
   rankProcessedClipNames,
   selectEncoder,
   sanitizeClipName
@@ -121,6 +126,31 @@ test('finds and ranks reusable names in processed MP4 filenames', () => {
 
   assert.equal(extractProcessedClipName(filenames[0]), 'Mercator')
   assert.deepEqual(rankProcessedClipNames(filenames), ['Mercator', 'Home', 'Work'])
+})
+
+test('lists saved MP4 videos in reverse filename order', async () => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'dashcam-processed-'))
+
+  try {
+    await fs.writeFile(path.join(folder, '2026-07-30_15-10 Shop (94 - 106).mp4'), 'newer')
+    await fs.writeFile(path.join(folder, '2026-07-29_12-00 Home (40 - 45).mp4'), 'older')
+    await fs.writeFile(path.join(folder, 'notes.txt'), 'ignored')
+    const videos = await listProcessedVideos(folder)
+
+    assert.deepEqual(videos.map((video) => video.name), [
+      '2026-07-30_15-10 Shop (94 - 106).mp4',
+      '2026-07-29_12-00 Home (40 - 45).mp4'
+    ])
+    assert.equal(videos[0].size, 5)
+    assert.ok(videos[0].modifiedAt)
+  } finally {
+    await fs.rm(folder, { recursive: true, force: true })
+  }
+})
+
+test('rejects paths outside the saved video folder', () => {
+  assert.throws(() => processedVideoPath('../other.mp4'), /saved MP4 video/i)
+  assert.throws(() => processedVideoPath('other.mov'), /saved MP4 video/i)
 })
 
 test('converts FFmpeg microsecond progress into a percentage', () => {

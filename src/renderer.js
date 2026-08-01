@@ -9,6 +9,10 @@ const state = {
   sourceIsLibrary: false,
   importStatus: null,
   processingView: 'unprocessed',
+  savedVideos: [],
+  savedVideosLoading: false,
+  savedVideosError: '',
+  savedVideosRequest: 0,
   expandedSegments: new Set(),
   selectedSegmentIds: new Set(),
   toastTimer: null
@@ -27,6 +31,7 @@ const loadingState = document.querySelector('#loading-state')
 const resultsHeading = document.querySelector('#results-heading')
 const resultsSummary = document.querySelector('#results-summary')
 const segmentsList = document.querySelector('#segments-list')
+const savedVideosList = document.querySelector('#saved-videos-list')
 const resultsControls = document.querySelector('#results-controls')
 const processingTabs = document.querySelector('#processing-tabs')
 const selectionToolbar = document.querySelector('#selection-toolbar')
@@ -74,6 +79,8 @@ const libraryPath = document.querySelector('#library-path')
 const chooseLibraryButton = document.querySelector('#choose-library-button')
 const viewLibraryButton = document.querySelector('#view-library-button')
 const importBanner = document.querySelector('#import-banner')
+const updateButton = document.querySelector('#update-button')
+const updateLabel = document.querySelector('#update-label')
 
 function getFilterMode() {
   return document.querySelector('input[name="filter-mode"]:checked').value
@@ -135,6 +142,13 @@ function formatBytes(bytes) {
   }
 
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+function formatSavedVideoDate(dateValue) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(dateValue))
 }
 
 function formatVideoTime(seconds) {
@@ -242,6 +256,16 @@ function showToast(message) {
   toast.textContent = message
   toast.classList.remove('hidden')
   state.toastTimer = setTimeout(() => toast.classList.add('hidden'), 6500)
+}
+
+function renderUpdateStatus(status) {
+  const available = Boolean(status?.available && status.latestVersion)
+  updateButton.classList.toggle('hidden', !available)
+
+  if (available) {
+    updateLabel.textContent = `Update ${status.latestVersion}`
+    updateButton.title = `Open Dashcam Clipper ${status.latestVersion} on GitHub`
+  }
 }
 
 function makeButton(label, className, action) {
@@ -485,6 +509,126 @@ function getVisibleSegments() {
   return state.segments
 }
 
+function createSavedVideoCard(video) {
+  const card = document.createElement('article')
+  card.className = 'saved-video-card'
+
+  const icon = document.createElement('span')
+  icon.className = 'saved-video-icon'
+  icon.setAttribute('aria-hidden', 'true')
+
+  const details = document.createElement('div')
+  details.className = 'saved-video-details'
+  const name = document.createElement('strong')
+  name.textContent = video.name
+  name.title = video.name
+  const metadata = document.createElement('span')
+  metadata.textContent = `${formatSavedVideoDate(video.modifiedAt)} · ${formatBytes(video.size)}`
+  details.append(name, metadata)
+
+  const playButton = makeButton('Play in VLC', 'secondary-button', async () => {
+    playButton.disabled = true
+    playButton.textContent = 'Opening...'
+
+    try {
+      await window.dashcam.playProcessedVideo(video.name)
+    } catch (error) {
+      showError(error)
+    } finally {
+      playButton.disabled = false
+      playButton.textContent = 'Play in VLC'
+    }
+  })
+
+  card.append(icon, details, playButton)
+  return card
+}
+
+function renderSavedVideos() {
+  importBanner.classList.add('hidden')
+  segmentsList.classList.add('hidden')
+  savedVideosList.classList.remove('hidden')
+  selectionToolbar.classList.add('hidden')
+  selectVisibleButton.classList.add('hidden')
+  resultsHeading.classList.remove('hidden')
+  resultsHeading.querySelector('.eyebrow').textContent = 'Archive'
+  document.querySelector('#results-title').textContent = 'Saved videos'
+  savedVideosList.replaceChildren()
+
+  if (state.savedVideosLoading) {
+    emptyState.classList.add('hidden')
+    loadingState.classList.remove('hidden')
+    loadingState.querySelector('p').textContent = 'Reading saved videos...'
+    resultsSummary.textContent = 'Checking the Processed folder'
+    return
+  }
+
+  loadingState.classList.add('hidden')
+
+  if (state.savedVideosError) {
+    emptyState.querySelector('h2').textContent = 'Saved videos are unavailable'
+    emptyState.querySelector('p').textContent = state.savedVideosError
+    emptyState.classList.remove('hidden')
+    resultsSummary.textContent = 'Processed folder unavailable'
+    return
+  }
+
+  if (state.savedVideos.length === 0) {
+    emptyState.querySelector('h2').textContent = 'No saved videos'
+    emptyState.querySelector('p').textContent = 'Finished MP4 videos from the Processed folder will appear here.'
+    emptyState.classList.remove('hidden')
+  } else {
+    emptyState.classList.add('hidden')
+
+    for (const video of state.savedVideos) {
+      savedVideosList.append(createSavedVideoCard(video))
+    }
+  }
+
+  const videoWord = state.savedVideos.length === 1 ? 'video' : 'videos'
+  const totalSize = state.savedVideos.reduce((total, video) => total + video.size, 0)
+  resultsSummary.textContent = `${state.savedVideos.length} saved ${videoWord} · ${formatBytes(totalSize)}`
+}
+
+async function loadSavedVideos() {
+  const request = ++state.savedVideosRequest
+  state.savedVideosLoading = true
+  state.savedVideosError = ''
+  renderResults()
+
+  try {
+    const videos = await window.dashcam.listProcessedVideos()
+
+    if (request !== state.savedVideosRequest || state.processingView !== 'saved') {
+      return
+    }
+
+    state.savedVideos = videos
+  } catch (error) {
+    if (request !== state.savedVideosRequest || state.processingView !== 'saved') {
+      return
+    }
+
+    state.savedVideos = []
+    state.savedVideosError = readableError(error)
+  } finally {
+    if (request === state.savedVideosRequest && state.processingView === 'saved') {
+      state.savedVideosLoading = false
+      renderResults()
+    }
+  }
+}
+
+async function refreshSavedVideosQuietly() {
+  try {
+    state.savedVideos = await window.dashcam.listProcessedVideos()
+  } catch {
+    state.savedVideos = []
+  }
+
+  updateProcessingTabs()
+}
+
 function getSelectedSegments() {
   return state.segments.filter((segment) => state.selectedSegmentIds.has(segment.id))
 }
@@ -547,6 +691,7 @@ function updateProcessingTabs() {
   document.querySelector('#all-count').textContent = String(state.segments.length)
   document.querySelector('#unprocessed-count').textContent = String(unprocessedCount)
   document.querySelector('#processed-count').textContent = String(processedCount)
+  document.querySelector('#saved-count').textContent = String(state.savedVideos.length)
 
   for (const tab of document.querySelectorAll('.processing-tab')) {
     const active = tab.dataset.processingView === state.processingView
@@ -596,20 +741,33 @@ function renderImportStatus() {
 
 function renderResults() {
   segmentsList.replaceChildren()
+  savedVideosList.replaceChildren()
   loadingState.classList.add('hidden')
+  resultsControls.classList.remove('hidden')
+  updateProcessingTabs()
+
+  if (state.processingView === 'saved') {
+    renderSavedVideos()
+    return
+  }
+
+  savedVideosList.classList.add('hidden')
+  segmentsList.classList.remove('hidden')
+  selectVisibleButton.classList.remove('hidden')
+  resultsHeading.querySelector('.eyebrow').textContent = 'Driving segments'
+  document.querySelector('#results-title').textContent = 'Recorded trips'
   renderImportStatus()
 
   if (!state.rootPath) {
     resultsHeading.classList.add('hidden')
-    resultsControls.classList.add('hidden')
     selectionToolbar.classList.add('hidden')
+    emptyState.querySelector('h2').textContent = 'Choose your dashcam folder'
+    emptyState.querySelector('p').textContent = 'Dashcam Clipper will group consecutive one-minute recordings into trips.'
     emptyState.classList.remove('hidden')
     return
   }
 
   resultsHeading.classList.remove('hidden')
-  resultsControls.classList.remove('hidden')
-  updateProcessingTabs()
   const visibleSegments = getVisibleSegments()
 
   if (state.segments.length === 0) {
@@ -647,6 +805,7 @@ function setLoading() {
   resultsControls.classList.add('hidden')
   selectionToolbar.classList.add('hidden')
   segmentsList.replaceChildren()
+  loadingState.querySelector('p').textContent = 'Reading camera clips...'
   loadingState.classList.remove('hidden')
 }
 
@@ -937,6 +1096,7 @@ async function saveOutput() {
     trimVideo.removeAttribute('src')
     trimVideo.load()
     state.trim = null
+    refreshSavedVideosQuietly()
 
     if (response.segments) {
       state.segments = response.segments
@@ -1226,9 +1386,25 @@ clearSelectionButton.addEventListener('click', () => {
 for (const tab of document.querySelectorAll('.processing-tab')) {
   tab.addEventListener('click', () => {
     state.processingView = tab.dataset.processingView
-    renderResults()
+
+    if (state.processingView === 'saved') {
+      loadSavedVideos()
+    } else {
+      renderResults()
+    }
   })
 }
+updateButton.addEventListener('click', async () => {
+  updateButton.disabled = true
+
+  try {
+    await window.dashcam.openUpdateRelease()
+  } catch (error) {
+    showError(error)
+  } finally {
+    updateButton.disabled = false
+  }
+})
 toolsButton.addEventListener('click', async () => {
   await refreshToolSettings()
   toolsDialog.showModal()
@@ -1279,6 +1455,8 @@ window.dashcam.onMediaProgress((progress) => {
   progressPercent.textContent = `${percent}%`
   progressTrack.setAttribute('aria-valuenow', String(percent))
 })
+
+window.dashcam.onUpdateStatus(renderUpdateStatus)
 
 trimVideo.addEventListener('loadedmetadata', () => {
   if (Number.isFinite(trimVideo.duration)) {
@@ -1389,3 +1567,5 @@ updateFilterControls()
 renderResults()
 refreshToolSettings()
 refreshLibraryStatus()
+refreshSavedVideosQuietly()
+window.dashcam.getUpdateStatus().then(renderUpdateStatus).catch(() => {})

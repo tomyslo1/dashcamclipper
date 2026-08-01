@@ -647,6 +647,55 @@ async function getProcessedNameSuggestions() {
   }
 }
 
+function processedVideoPath(fileName) {
+  if (typeof fileName !== 'string' || !fileName || /[\\/]/.test(fileName) || path.extname(fileName).toLowerCase() !== '.mp4') {
+    throw new Error('Choose a saved MP4 video from the list.')
+  }
+
+  return path.join(processedFolder(), fileName)
+}
+
+async function listProcessedVideos(folderPath = processedFolder()) {
+  const root = path.parse(folderPath).root
+
+  try {
+    await fs.access(root)
+  } catch {
+    throw new Error(`The archive location ${root} is not available. Connect the cloud drive and try again.`)
+  }
+
+  let entries
+
+  try {
+    entries = await fs.readdir(folderPath, { withFileTypes: true })
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return []
+    }
+
+    throw error
+  }
+
+  const videos = await Promise.all(entries
+    .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.mp4')
+    .map(async (entry) => {
+      const stats = await fs.stat(path.join(folderPath, entry.name))
+      return {
+        name: entry.name,
+        size: stats.size,
+        modifiedAt: stats.mtime.toISOString()
+      }
+    }))
+  const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
+  return videos.sort((left, right) => collator.compare(right.name, left.name))
+}
+
+async function playProcessedVideo(fileName) {
+  const filePath = processedVideoPath(fileName)
+  await fs.access(filePath)
+  playFileInVlc(filePath)
+}
+
 async function ensureProcessedFolder() {
   const destination = processedFolder()
   const root = process.platform === 'darwin' ? '/Volumes/cloud' : path.parse(destination).root
@@ -758,12 +807,15 @@ module.exports = {
   formatFilenameDate,
   generateSegmentThumbnail,
   getProcessedNameSuggestions,
+  listProcessedVideos,
   mergeSegment,
   extractProcessedClipName,
   parseProgressLine,
   playFileInVlc,
+  playProcessedVideo,
   playSegmentInVlc,
   processedFolder,
+  processedVideoPath,
   rankProcessedClipNames,
   selectEncoder,
   sanitizeClipName,

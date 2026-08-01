@@ -89,14 +89,15 @@ corepack pnpm start
 4. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
 5. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
 6. The segment list opens on **Unprocessed**. Switch to **All** or **Processed** when needed.
-7. Choose a driving segment:
+7. Open **Saved videos** to view finished MP4 files from the Processed folder. This page is read-only and can only open videos in VLC.
+8. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging.
    - **Delete** asks twice, then moves both camera files to the Recycle Bin or Trash.
-8. Select multiple segments with their checkboxes to merge them into one video, mark them processed or unprocessed together, or delete them with two confirmations. **Select visible** selects the current tab at once.
-9. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
-10. Name a merged clip and optionally replace the automatic filename date, time, or both. Leaving either field blank keeps that part from the second clip's modification time. Then set the video's start and end in the built-in trimming screen. The naming dialog offers up to five frequently used names from existing processed MP4 files.
-11. Save it to the archive. Only after the save succeeds, every source clip used for the video is marked processed; the original recordings are not deleted.
+9. Select multiple segments with their checkboxes to merge them into one video, mark them processed or unprocessed together, or delete them with two confirmations. **Select visible** selects the current tab at once.
+10. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
+11. Name a merged clip and optionally replace the automatic filename date, time, or both. Leaving either field blank keeps that part from the second clip's modification time. Then set the video's start and end in the built-in trimming screen. The naming dialog offers up to five frequently used names from existing processed MP4 files.
+12. Save it to the archive. Only after the save succeeds, every source clip used for the video is marked processed; the original recordings are not deleted.
 
 Finished clips use this filename:
 
@@ -132,6 +133,10 @@ Imports use exclusive file creation. If a destination file already exists, inclu
 Open **External tools** in the top-right corner of the app to see whether FFmpeg and VLC were detected. Use **Choose** to select `ffmpeg.exe` or `vlc.exe` when either program is installed in a custom location. Selected paths are saved in the app settings and reused on the next launch.
 
 Use **Use automatic** to remove a selected path and return to the built-in search of `PATH` and common installation folders. FFmpeg is used for thumbnails, merging, and trimming. VLC is used for segment playback and merged-video previews.
+
+## Updates
+
+Dashcam Clipper quietly checks the latest published GitHub Release when it starts. If a newer version is available, an update button appears beside the app title and opens that exact release page. Failed checks stay hidden and do not interrupt normal use.
 
 ## Custom tool locations
 
@@ -180,6 +185,6 @@ This creates DMG and ZIP packages for Apple Silicon and Intel Macs in `dist`.
 The `Build installers` GitHub Actions workflow can be started manually to download test artifacts. Pushing a version tag builds Windows and macOS packages and attaches all of them to a GitHub Release:
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```

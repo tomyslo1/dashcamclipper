@@ -13,8 +13,17 @@
         <div class="brand-mark" aria-hidden="true">
           <img src="../build/icon.png" alt="">
         </div>
-        <div>
-          <h1>Dashcam Clipper</h1>
+        <div class="app-title">
+          <div class="app-title-row">
+            <h1>Dashcam Clipper</h1>
+            <button id="update-button" class="update-button hidden" type="button" aria-live="polite">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v11m0 0 4-4m-4 4-4-4"></path>
+                <path d="M5 16v3h14v-3"></path>
+              </svg>
+              <span id="update-label">Update available</span>
+            </button>
+          </div>
           <p>Find a drive, keep the useful part, archive it.</p>
         </div>
         <button id="tools-button" class="secondary-button header-button" type="button">External tools</button>
@@ -112,7 +121,7 @@
           </div>
 
           <div id="results-controls" class="results-controls hidden">
-            <div id="processing-tabs" class="processing-tabs" role="tablist" aria-label="Processing status">
+            <div id="processing-tabs" class="processing-tabs" role="tablist" aria-label="Library view">
               <button class="processing-tab" data-processing-view="all" type="button" role="tab" aria-selected="false">
                 All <span id="all-count">0</span>
               </button>
@@ -121,6 +130,9 @@
               </button>
               <button class="processing-tab" data-processing-view="processed" type="button" role="tab" aria-selected="false">
                 Processed <span id="processed-count">0</span>
+              </button>
+              <button class="processing-tab" data-processing-view="saved" type="button" role="tab" aria-selected="false">
+                Saved videos <span id="saved-count">0</span>
               </button>
             </div>
             <button id="select-visible" class="text-button" type="button">Select visible</button>
@@ -151,6 +163,7 @@
           </div>
 
           <div id="segments-list" class="segments-list"></div>
+          <div id="saved-videos-list" class="saved-videos-list hidden"></div>
         </section>
       </main>
     </div>
