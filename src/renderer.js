@@ -8,11 +8,12 @@ const state = {
   library: null,
   sourceIsLibrary: false,
   importStatus: null,
-  processingView: 'all',
+  processingView: 'unprocessed',
   expandedSegments: new Set(),
   selectedSegmentIds: new Set(),
   toastTimer: null
 }
+const filenameCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
 
 const browseButton = document.querySelector('#browse-button')
 const scanButton = document.querySelector('#scan-button')
@@ -490,17 +491,19 @@ function getSelectedSegments() {
 
 function createMergeSelection(segments) {
   const orderedSegments = [...segments].sort((left, right) => new Date(left.start) - new Date(right.start))
-  const clips = orderedSegments.flatMap((segment) => segment.clips)
+  const clips = orderedSegments
+    .flatMap((segment) => segment.clips)
+    .sort((left, right) => filenameCollator.compare(left.fileName, right.fileName))
   const filenameClip = clips[Math.min(1, clips.length - 1)]
-  const firstRange = orderedSegments[0]?.clipRange
-  const lastRange = orderedSegments[orderedSegments.length - 1]?.clipRange
+  const firstNumber = Number(clips[0]?.fileName?.match(/(\d+)(?=\.[^.]+$)/)?.[1])
+  const lastNumber = Number(clips[clips.length - 1]?.fileName?.match(/(\d+)(?=\.[^.]+$)/)?.[1])
 
   return {
     segmentIds: orderedSegments.map((segment) => segment.id),
     segmentCount: orderedSegments.length,
     filenameDate: filenameClip?.recordedAt || orderedSegments[0]?.filenameDate,
-    clipRange: firstRange && lastRange
-      ? { start: firstRange.start, end: lastRange.end }
+    clipRange: Number.isInteger(firstNumber) && Number.isInteger(lastNumber)
+      ? { start: firstNumber, end: lastNumber }
       : null,
     durationMs: clips.length * 60 * 1000
   }
@@ -693,7 +696,7 @@ async function chooseSource() {
     if (selectedPath !== state.rootPath) {
       state.expandedSegments.clear()
       state.selectedSegmentIds.clear()
-      state.processingView = 'all'
+      state.processingView = 'unprocessed'
     }
 
     state.rootPath = selectedPath
@@ -925,7 +928,7 @@ async function saveOutput() {
   openProgress('Saving trimmed clip')
 
   try {
-    const destinationPath = await window.dashcam.saveTrimmedVideo({
+    const response = await window.dashcam.saveTrimmedVideo({
       outputId: state.trim.outputId,
       start,
       end
@@ -934,7 +937,21 @@ async function saveOutput() {
     trimVideo.removeAttribute('src')
     trimVideo.load()
     state.trim = null
-    showToast(`Saved to ${destinationPath}`)
+
+    if (response.segments) {
+      state.segments = response.segments
+
+      if (state.totals) {
+        state.totals.processedVisible = state.segments.reduce((total, segment) => total + segment.processedCount, 0)
+      }
+
+      renderResults()
+    }
+
+    const saveMessage = response.processingWarning
+      ? `Saved to ${response.destinationPath}. ${response.processingWarning}`
+      : `Saved to ${response.destinationPath} and marked the source clips processed.`
+    showToast(saveMessage)
   } catch (error) {
     closeProgress()
     trimDialog.showModal()
@@ -1085,7 +1102,7 @@ async function viewServerLibrary() {
 
   if (state.rootPath !== state.library.path) {
     state.expandedSegments.clear()
-    state.processingView = 'all'
+    state.processingView = 'unprocessed'
   }
 
   state.rootPath = state.library.path

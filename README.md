@@ -25,9 +25,9 @@ Clip modification times are used as recording times. Consecutive clips belong to
 - Node.js 20 or newer
 - FFmpeg
 - VLC media player
-- An NVIDIA GPU is optional on Windows
+- A supported NVIDIA, AMD, or Intel GPU is optional on Windows
 
-Dashcam Clipper uses `hevc_nvenc` when it is available on Windows and Apple VideoToolbox on macOS. It falls back to software HEVC or H.264 encoding.
+On Windows, Dashcam Clipper probes NVIDIA NVENC, AMD AMF, Intel Quick Sync, and Windows Media Foundation HEVC encoders, then falls back to CPU `libx265`. On Apple Silicon and other supported Macs, it prefers VideoToolbox HEVC and falls back to `libx265`. A hardware encoder that passes the initial probe but fails on the real video is retried automatically with CPU HEVC.
 
 ### Windows setup
 
@@ -65,15 +65,15 @@ corepack pnpm start
 3. When viewing a card, import files that do not exist in the server library. Existing server files are never overwritten.
 4. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
 5. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
-6. Choose a driving segment:
+6. The segment list opens on **Unprocessed**. Switch to **All** or **Processed** when needed.
+7. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging.
    - **Delete** asks twice, then moves both camera files to the Recycle Bin or Trash.
-7. Select multiple segments with their checkboxes to merge them into one video, mark them processed or unprocessed together, or delete them with two confirmations. **Select visible** selects the current tab at once.
-8. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
-9. Switch between **All**, **Unprocessed**, and **Processed** above the segment list.
+8. Select multiple segments with their checkboxes to merge them into one video, mark them processed or unprocessed together, or delete them with two confirmations. **Select visible** selects the current tab at once.
+9. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
 10. Name a merged clip and optionally replace the automatic filename date, time, or both. Leaving either field blank keeps that part from the second clip's modification time. Then set the video's start and end in the built-in trimming screen. The naming dialog offers up to five frequently used names from existing processed MP4 files.
-11. Save it to the archive.
+11. Save it to the archive. Only after the save succeeds, every source clip used for the video is marked processed; the original recordings are not deleted.
 
 Finished clips use this filename:
 
@@ -95,6 +95,8 @@ The app reports an error if the archive drive is not connected. It does not sile
 Dashcam Clipper creates `dashcamclipper/metadata.json` only in the configured server library. Even while browsing a microSD card, processed state is read from and written to that server metadata. Processed clips are identified by their relative path inside `DCIMA`, so the state continues to work if the card or library receives a different drive letter or mount point.
 
 Marking a segment processes every visible clip in that segment. A segment counts as processed only when all of its clips are processed; otherwise it remains under **Unprocessed** and shows the partial count. The metadata file is written separately from the recordings and the video files are not modified.
+
+Within each segment and across a selected multi-segment merge, clips are naturally sorted by filename before display, VLC playback, and FFmpeg concatenation. For example, `MOVI0388.avi`, `MOVI0389.avi`, `MOVI0390.avi`, and `MOVI0391.avi` are always processed in that order even when their modification times disagree.
 
 ## Importing from a microSD card
 

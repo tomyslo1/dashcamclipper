@@ -16,6 +16,7 @@ const {
   findCameraFolders,
   refreshSegmentProcessing,
   scanSource,
+  sortClipsByName,
   toPublicSegment
 } = require('./lib/clips')
 
@@ -182,6 +183,28 @@ function queueMetadataWrite(operation) {
   return result
 }
 
+async function setClipKeysProcessingState(clipKeys, processed) {
+  if (!librarySettings.libraryPath) {
+    throw new Error('Choose the server library before changing processing state.')
+  }
+
+  const metadata = await setClipsProcessed(librarySettings.libraryPath, clipKeys, processed)
+  const changedKeys = new Set(clipKeys)
+
+  for (const currentSegment of segmentsById.values()) {
+    for (const clip of currentSegment.clips) {
+      if (changedKeys.has(clip.key)) {
+        clip.processedAt = metadata.processedClips[clip.key] || null
+        clip.processed = Boolean(clip.processedAt)
+      }
+    }
+
+    refreshSegmentProcessing(currentSegment)
+  }
+
+  return metadata
+}
+
 async function updateProcessingState(options) {
   if (!currentRootPath) {
     throw new Error('Choose and scan a source folder first.')
@@ -216,23 +239,7 @@ async function updateProcessingState(options) {
     throw new Error('Choose a segment or clip to update.')
   }
 
-  if (!librarySettings.libraryPath) {
-    throw new Error('Choose the server library before changing processing state.')
-  }
-
-  const metadata = await setClipsProcessed(librarySettings.libraryPath, clipKeys, options.processed)
-  const changedKeys = new Set(clipKeys)
-
-  for (const currentSegment of segmentsById.values()) {
-    for (const clip of currentSegment.clips) {
-      if (changedKeys.has(clip.key)) {
-        clip.processedAt = metadata.processedClips[clip.key] || null
-        clip.processed = Boolean(clip.processedAt)
-      }
-    }
-
-    refreshSegmentProcessing(currentSegment)
-  }
+  await setClipKeysProcessingState(clipKeys, options.processed)
 
   if (options.scope === 'segments') {
     return affectedSegments.map(toPublicSegment)
@@ -324,7 +331,7 @@ async function mergeSelectedSegments(segmentIds, options) {
   }
 
   const segments = getSegments(segmentIds)
-  const clips = segments.flatMap((segment) => segment.clips)
+  const clips = sortClipsByName(segments.flatMap((segment) => segment.clips))
   const name = typeof options?.name === 'string' ? options.name.trim() : ''
 
   if (!name) {
@@ -351,7 +358,8 @@ async function mergeSelectedSegments(segmentIds, options) {
     path: outputPath,
     name,
     filenameDate,
-    clipRange
+    clipRange,
+    clipKeys: [...new Set(clips.map((clip) => clip.key))]
   })
 
   return {
@@ -588,8 +596,20 @@ function registerHandlers() {
       end: options.end
     }, sendProgress, setActiveProcess)
 
+    let processingWarning = ''
+
+    try {
+      await queueMetadataWrite(() => setClipKeysProcessingState(output.clipKeys, true))
+    } catch (error) {
+      processingWarning = `The video was saved, but its source clips could not be marked processed: ${error.message}`
+    }
+
     temporaryOutputs.delete(options.outputId)
-    return destinationPath
+    return {
+      destinationPath,
+      segments: [...segmentsById.values()].map(toPublicSegment),
+      processingWarning
+    }
   })
 
   ipcMain.handle('discard-output', async (_event, outputId) => {

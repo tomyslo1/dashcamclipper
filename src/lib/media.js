@@ -4,6 +4,7 @@ const fsSync = require('node:fs')
 const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
+const { sortClipsByName } = require('./clips')
 
 let toolOverrides = {
   ffmpegPath: '',
@@ -202,7 +203,7 @@ async function generateSegmentThumbnail(segment) {
 async function createVlcPlaylist(clips) {
   const tempFolder = await getTempFolder()
   const playlistPath = path.join(tempFolder, `segment-${crypto.randomUUID()}.m3u8`)
-  const lines = ['#EXTM3U', ...clips.map((clip) => clip.front.path)]
+  const lines = ['#EXTM3U', ...sortClipsByName(clips).map((clip) => clip.front.path)]
   await fs.writeFile(playlistPath, lines.join(os.EOL), 'utf8')
   return playlistPath
 }
@@ -245,38 +246,86 @@ function findEncoder(ffmpeg) {
   })
   const encoders = `${result.stdout || ''}\n${result.stderr || ''}`
 
-  if (process.platform === 'win32' && encoders.includes('hevc_nvenc') && canEncode(ffmpeg, 'hevc_nvenc')) {
-    return {
-      name: 'NVIDIA HEVC',
-      args: ['-c:v', 'hevc_nvenc', '-preset', 'p7', '-rc', 'vbr', '-cq', '32', '-b:v', '0', '-spatial-aq', '1']
-    }
-  }
-
-  if (process.platform === 'darwin' && encoders.includes('hevc_videotoolbox') && canEncode(ffmpeg, 'hevc_videotoolbox')) {
-    return {
-      name: 'Apple VideoToolbox HEVC',
-      args: ['-c:v', 'hevc_videotoolbox', '-q:v', '65', '-tag:v', 'hvc1']
-    }
-  }
-
-  if (encoders.includes('libx265')) {
-    return {
-      name: 'software HEVC',
-      args: ['-c:v', 'libx265', '-preset', 'medium', '-crf', '30', '-tag:v', 'hvc1']
-    }
-  }
-
-  if (encoders.includes('libx264')) {
-    return {
-      name: 'software H.264',
-      args: ['-c:v', 'libx264', '-preset', 'medium', '-crf', '23']
-    }
-  }
-
-  throw new Error('This FFmpeg installation does not contain a supported H.264 or HEVC encoder.')
+  return selectEncoder(
+    encoders,
+    process.platform,
+    process.arch,
+    (encoderArgs) => canEncode(ffmpeg, encoderArgs)
+  )
 }
 
-function canEncode(ffmpeg, encoder) {
+function selectEncoder(encoders, platform, architecture, canUse) {
+  const candidates = []
+
+  if (platform === 'win32') {
+    candidates.push(
+      {
+        codec: 'hevc_nvenc',
+        name: 'NVIDIA HEVC',
+        args: ['-c:v', 'hevc_nvenc', '-preset', 'p7', '-rc', 'vbr', '-cq', '32', '-b:v', '0', '-spatial-aq', '1']
+      },
+      {
+        codec: 'hevc_amf',
+        name: 'AMD AMF HEVC',
+        args: ['-c:v', 'hevc_amf', '-quality', 'quality']
+      },
+      {
+        codec: 'hevc_qsv',
+        name: 'Intel Quick Sync HEVC',
+        args: ['-c:v', 'hevc_qsv', '-preset', 'slower', '-global_quality', '30']
+      },
+      {
+        codec: 'hevc_mf',
+        name: 'Windows Media Foundation hardware HEVC',
+        args: ['-c:v', 'hevc_mf', '-hw_encoding', '1', '-rate_control', 'quality', '-quality', '80']
+      }
+    )
+  }
+
+  if (platform === 'darwin') {
+    candidates.push({
+      codec: 'hevc_videotoolbox',
+      name: architecture === 'arm64' ? 'Apple Silicon VideoToolbox HEVC' : 'Apple VideoToolbox HEVC',
+      args: ['-c:v', 'hevc_videotoolbox', '-q:v', '65', '-tag:v', 'hvc1']
+    })
+  }
+
+  candidates.push({
+    codec: 'libx265',
+    name: 'software HEVC',
+    args: ['-c:v', 'libx265', '-preset', 'medium', '-crf', '30', '-tag:v', 'hvc1']
+  })
+
+  for (const candidate of candidates) {
+    if (encoders.includes(candidate.codec) && canUse(candidate.args)) {
+      return {
+        name: candidate.name,
+        args: candidate.args,
+        hardware: candidate.codec !== 'libx265'
+      }
+    }
+  }
+
+  throw new Error('This FFmpeg installation does not contain a usable HEVC encoder. Install an FFmpeg build with GPU HEVC support or libx265.')
+}
+
+function findSoftwareEncoder(ffmpeg) {
+  const result = spawnSync(ffmpeg, ['-hide_banner', '-encoders'], {
+    encoding: 'utf8',
+    timeout: 10000,
+    windowsHide: true
+  })
+  const encoders = `${result.stdout || ''}\n${result.stderr || ''}`
+  const args = ['-c:v', 'libx265', '-preset', 'medium', '-crf', '30', '-tag:v', 'hvc1']
+
+  if (encoders.includes('libx265') && canEncode(ffmpeg, args)) {
+    return { name: 'software HEVC', args, hardware: false }
+  }
+
+  return null
+}
+
+function canEncode(ffmpeg, encoderArgs) {
   const result = spawnSync(ffmpeg, [
     '-hide_banner',
     '-loglevel',
@@ -288,8 +337,7 @@ function canEncode(ffmpeg, encoder) {
     '-frames:v',
     '1',
     '-an',
-    '-c:v',
-    encoder,
+    ...encoderArgs,
     '-f',
     'null',
     '-'
@@ -303,12 +351,13 @@ function canEncode(ffmpeg, encoder) {
 }
 
 function buildMergeArguments(clips, outputPath, encoderArgs, options = {}) {
+  const orderedClips = sortClipsByName(clips)
   const inputArgs = []
   const stackedVideos = []
   const concatInputs = []
   const mirrorRear = options.mirrorRear !== false
 
-  clips.forEach((clip, index) => {
+  orderedClips.forEach((clip, index) => {
     const frontInput = index * 2
     const rearInput = frontInput + 1
     inputArgs.push('-i', clip.front.path, '-i', clip.rear.path)
@@ -327,7 +376,7 @@ function buildMergeArguments(clips, outputPath, encoderArgs, options = {}) {
     concatInputs.push(`[v${index}][${frontInput}:a]`)
   })
 
-  const filter = `${stackedVideos.join(';')};${concatInputs.join('')}concat=n=${clips.length}:v=1:a=1[outv][outa]`
+  const filter = `${stackedVideos.join(';')};${concatInputs.join('')}concat=n=${orderedClips.length}:v=1:a=1[outv][outa]`
 
   return [
     '-y',
@@ -433,16 +482,41 @@ async function mergeSegment(clips, options, onProgress, onProcess) {
   const tempFolder = await getTempFolder()
   const outputPath = path.join(tempFolder, `merged-${crypto.randomUUID()}.mp4`)
   const encoder = findEncoder(ffmpeg)
-  const args = buildMergeArguments(clips, outputPath, encoder.args, options)
+  let activeEncoder = encoder
+  let args = buildMergeArguments(clips, outputPath, activeEncoder.args, options)
 
-  onProgress({ phase: `Combining with ${encoder.name}`, percent: 0 })
-  await runFfmpeg(
-    ffmpeg,
-    args,
-    clips.length * 60,
-    (percent) => onProgress({ phase: `Combining with ${encoder.name}`, percent }),
-    onProcess
-  )
+  onProgress({ phase: `Combining with ${activeEncoder.name}`, percent: 0 })
+
+  try {
+    await runFfmpeg(
+      ffmpeg,
+      args,
+      clips.length * 60,
+      (percent) => onProgress({ phase: `Combining with ${activeEncoder.name}`, percent }),
+      onProcess
+    )
+  } catch (error) {
+    if (!activeEncoder.hardware || /cancelled/i.test(error.message)) {
+      throw error
+    }
+
+    const softwareEncoder = findSoftwareEncoder(ffmpeg)
+
+    if (!softwareEncoder) {
+      throw error
+    }
+
+    activeEncoder = softwareEncoder
+    args = buildMergeArguments(clips, outputPath, activeEncoder.args, options)
+    onProgress({ phase: 'GPU HEVC failed, retrying with software HEVC', percent: 0 })
+    await runFfmpeg(
+      ffmpeg,
+      args,
+      clips.length * 60,
+      (percent) => onProgress({ phase: `Combining with ${activeEncoder.name}`, percent }),
+      onProcess
+    )
+  }
 
   return outputPath
 }
@@ -691,6 +765,7 @@ module.exports = {
   playSegmentInVlc,
   processedFolder,
   rankProcessedClipNames,
+  selectEncoder,
   sanitizeClipName,
   saveTrimmedVideo,
   setToolOverrides,

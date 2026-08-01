@@ -10,6 +10,7 @@ const {
   formatFilenameDate,
   parseProgressLine,
   rankProcessedClipNames,
+  selectEncoder,
   sanitizeClipName
 } = require('../src/lib/media')
 
@@ -38,6 +39,44 @@ test('can stack the rear image without mirroring it', () => {
 
   assert.match(filter, /\[0:v\]\[1:v\]vstack=inputs=2\[v0\]/)
   assert.doesNotMatch(filter, /hflip/)
+})
+
+test('orders FFmpeg inputs naturally by clip filename', () => {
+  const clips = [
+    { front: { name: 'MOVI0391.avi', path: 'front-391.avi' }, rear: { path: 'rear-391.avi' } },
+    { front: { name: 'MOVI0390.avi', path: 'front-390.avi' }, rear: { path: 'rear-390.avi' } }
+  ]
+  const args = buildMergeArguments(clips, 'output.mp4', ['-c:v', 'libx265'])
+
+  assert.ok(args.indexOf('front-390.avi') < args.indexOf('front-391.avi'))
+})
+
+test('uses available Windows HEVC hardware and falls back to CPU HEVC', () => {
+  const encoders = 'hevc_nvenc hevc_amf hevc_qsv hevc_mf libx265 libx264'
+  const amd = selectEncoder(encoders, 'win32', 'x64', (args) => !args.includes('hevc_nvenc'))
+  const intel = selectEncoder(encoders, 'win32', 'x64', (args) => args.includes('hevc_qsv'))
+  const mediaFoundation = selectEncoder('hevc_mf libx265', 'win32', 'x64', (args) => args.includes('hevc_mf'))
+  const cpu = selectEncoder(encoders, 'win32', 'x64', (args) => args.includes('libx265'))
+
+  assert.equal(amd.name, 'AMD AMF HEVC')
+  assert.equal(intel.name, 'Intel Quick Sync HEVC')
+  assert.equal(mediaFoundation.name, 'Windows Media Foundation hardware HEVC')
+  assert.equal(cpu.name, 'software HEVC')
+  assert.ok(cpu.args.includes('libx265'))
+})
+
+test('prefers VideoToolbox HEVC on Apple Silicon', () => {
+  const encoder = selectEncoder('hevc_videotoolbox libx265', 'darwin', 'arm64', () => true)
+
+  assert.equal(encoder.name, 'Apple Silicon VideoToolbox HEVC')
+  assert.ok(encoder.args.includes('hevc_videotoolbox'))
+})
+
+test('does not silently fall back to H.264 when HEVC is unavailable', () => {
+  assert.throws(
+    () => selectEncoder('libx264', 'win32', 'x64', () => true),
+    /usable HEVC encoder/i
+  )
 })
 
 test('cleans names that are unsafe on Windows and macOS', () => {

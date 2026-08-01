@@ -6,6 +6,7 @@ const { readProcessingMetadata } = require('./processing-metadata')
 const VIDEO_EXTENSIONS = new Set(['.avi', '.mp4', '.mov', '.mkv'])
 const SEGMENT_GAP_MS = 3 * 60 * 1000
 const OUTLIER_DATE_GAP_MS = 12 * 60 * 60 * 1000
+const FILENAME_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
 
 async function findCameraFolders(rootPath) {
   const entries = await fs.readdir(rootPath, { withFileTypes: true })
@@ -175,6 +176,22 @@ function parseClipNumber(filename) {
   return match ? Number(match[1]) : null
 }
 
+function compareClipsByName(left, right) {
+  const leftName = left.front.name || path.basename(left.front.path)
+  const rightName = right.front.name || path.basename(right.front.path)
+  const nameResult = FILENAME_COLLATOR.compare(leftName, rightName)
+
+  if (nameResult !== 0) {
+    return nameResult
+  }
+
+  return FILENAME_COLLATOR.compare(left.front.relativePath || left.front.path, right.front.relativePath || right.front.path)
+}
+
+function sortClipsByName(clips) {
+  return [...clips].sort(compareClipsByName)
+}
+
 function clipSequenceIdentity(clip) {
   const relativePath = (clip.front.relativePath || clip.front.name).split(path.sep).join('/')
   const extension = path.posix.extname(relativePath)
@@ -262,25 +279,24 @@ function createClipRange(clips) {
 }
 
 function createSegment(clips) {
-  const firstClip = clips[0]
-  const lastClip = clips[clips.length - 1]
-  const filenameClip = clips[Math.min(1, clips.length - 1)]
-  const fingerprint = clips.map((clip) => clip.front.path).join('\n')
+  const orderedClips = sortClipsByName(clips)
+  const timelineValues = orderedClips.map((clip) => Number(clip.timelineAt || clip.recordedAt))
+  const start = new Date(Math.min(...timelineValues))
+  const end = new Date(Math.max(...timelineValues))
+  const filenameClip = orderedClips[Math.min(1, orderedClips.length - 1)]
+  const fingerprint = orderedClips.map((clip) => clip.front.path).join('\n')
 
   const segment = {
     id: crypto.createHash('sha1').update(fingerprint).digest('hex').slice(0, 16),
-    start: firstClip.timelineAt || firstClip.recordedAt,
-    end: lastClip.timelineAt || lastClip.recordedAt,
+    start,
+    end,
     filenameDate: filenameClip.recordedAt,
-    clipRange: createClipRange(clips),
-    durationMs: Math.max(
-      60 * 1000,
-      (lastClip.timelineAt || lastClip.recordedAt) - (firstClip.timelineAt || firstClip.recordedAt) + 60 * 1000
-    ),
-    clipCount: clips.length,
-    pairedCount: clips.filter((clip) => clip.rear).length,
-    totalSize: clips.reduce((total, clip) => total + clip.size, 0),
-    clips
+    clipRange: createClipRange(orderedClips),
+    durationMs: Math.max(60 * 1000, end - start + 60 * 1000),
+    clipCount: orderedClips.length,
+    pairedCount: orderedClips.filter((clip) => clip.rear).length,
+    totalSize: orderedClips.reduce((total, clip) => total + clip.size, 0),
+    clips: orderedClips
   }
 
   refreshSegmentProcessing(segment)
@@ -468,6 +484,7 @@ module.exports = {
   SEGMENT_GAP_MS,
   OUTLIER_DATE_GAP_MS,
   createClipRange,
+  compareClipsByName,
   filterClips,
   applyProcessingMetadata,
   findCameraFolders,
@@ -481,5 +498,6 @@ module.exports = {
   refreshSegmentImport,
   pathsEqual,
   scanSource,
+  sortClipsByName,
   toPublicSegment
 }

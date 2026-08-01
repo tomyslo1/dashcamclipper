@@ -13,6 +13,7 @@ const {
   parseClipNumber,
   reconcileClipTimeline,
   scanSource,
+  sortClipsByName,
   toPublicSegment
 } = require('../src/lib/clips')
 const { setClipsProcessed } = require('../src/lib/processing-metadata')
@@ -82,6 +83,28 @@ test('reads the first and last numeric clip suffix for saved filenames', () => {
 
   assert.equal(parseClipNumber('MOVI0094.avi'), 94)
   assert.deepEqual(createClipRange(clips), { start: 94, end: 106 })
+})
+
+test('sorts segment clips naturally by filename instead of modification order', () => {
+  const clips = [
+    numberedClip(388, '2026-07-30T13:31:00Z'),
+    numberedClip(389, '2026-07-30T13:34:00Z'),
+    numberedClip(390, '2026-07-30T13:32:00Z'),
+    numberedClip(391, '2026-07-30T13:33:00Z')
+  ]
+  const segments = groupSegments(clips)
+
+  assert.deepEqual(segments[0].clips.map((clip) => clip.front.name), [
+    'MOVI0388.avi',
+    'MOVI0389.avi',
+    'MOVI0390.avi',
+    'MOVI0391.avi'
+  ])
+  assert.deepEqual(
+    sortClipsByName([numberedClip(10, '2026-07-30T13:32:00Z'), numberedClip(9, '2026-07-30T13:31:00Z')])
+      .map((clip) => clip.front.name),
+    ['MOVI0009.avi', 'MOVI0010.avi']
+  )
 })
 
 test('places a bad-date clip immediately before its consecutive successor', () => {
