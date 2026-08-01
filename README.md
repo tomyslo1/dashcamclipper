@@ -156,7 +156,7 @@ corepack pnpm install
 corepack pnpm run dist:win
 ```
 
-The installer is written to `dist/Dashcam Clipper-0.1.0-win-x64.exe`.
+The installer is written to `dist/Dashcam Clipper-<version>-win-x64.exe`.
 
 On macOS:
 
