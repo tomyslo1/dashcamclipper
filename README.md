@@ -60,12 +60,13 @@ corepack pnpm start
 
 1. Choose the folder that contains `DCIMA` and `DCIMB`.
 2. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
-3. Choose a driving segment:
+3. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
+4. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips.
    - **Delete** asks twice, then moves both camera files to the Recycle Bin or Trash.
-4. Name a merged clip and set its start and end in the built-in trimming screen.
-5. Save it to the archive.
+5. Name a merged clip and set its start and end in the built-in trimming screen.
+6. Save it to the archive.
 
 Finished clips use this filename:
 
@@ -79,6 +80,12 @@ They are written to:
 - macOS: `/Volumes/cloud/Videos/Dashcam/Processed`
 
 The app reports an error if the archive drive is not connected. It does not silently save to another location.
+
+## External tools
+
+Open **External tools** in the top-right corner of the app to see whether FFmpeg and VLC were detected. Use **Choose** to select `ffmpeg.exe` or `vlc.exe` when either program is installed in a custom location. Selected paths are saved in the app settings and reused on the next launch.
+
+Use **Use automatic** to remove a selected path and return to the built-in search of `PATH` and common installation folders. FFmpeg is used for thumbnails, merging, and trimming. VLC is used for segment playback and merged-video previews.
 
 ## Custom tool locations
 

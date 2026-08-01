@@ -3,6 +3,7 @@ const test = require('node:test')
 
 const {
   buildMergeArguments,
+  buildThumbnailArguments,
   formatFilenameDate,
   parseProgressLine,
   sanitizeClipName
@@ -31,4 +32,12 @@ test('formats the required archive filename timestamp', () => {
 
 test('converts FFmpeg microsecond progress into a percentage', () => {
   assert.equal(parseProgressLine('out_time_ms=30000000', 60), 50)
+})
+
+test('builds a small front-camera thumbnail command', () => {
+  const args = buildThumbnailArguments('front clip.avi', 'preview.jpg')
+
+  assert.deepEqual(args.slice(0, 5), ['-y', '-ss', '0.25', '-i', 'front clip.avi'])
+  assert.ok(args.includes('scale=320:-2'))
+  assert.equal(args.at(-1), 'preview.jpg')
 })

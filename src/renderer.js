@@ -4,6 +4,7 @@ const state = {
   totals: null,
   scanVersion: 0,
   trim: null,
+  tools: null,
   toastTimer: null
 }
 
@@ -42,6 +43,8 @@ const endOutput = document.querySelector('#end-output')
 const errorDialog = document.querySelector('#error-dialog')
 const errorMessage = document.querySelector('#error-message')
 const toast = document.querySelector('#toast')
+const toolsDialog = document.querySelector('#tools-dialog')
+const toolsButton = document.querySelector('#tools-button')
 
 function getFilterMode() {
   return document.querySelector('input[name="filter-mode"]:checked').value
@@ -193,9 +196,24 @@ function makeButton(label, className, action) {
   return button
 }
 
+function createThumbnail(segment) {
+  const thumbnail = document.createElement('div')
+  thumbnail.className = 'segment-thumbnail thumbnail-loading'
+  thumbnail.dataset.thumbnail = segment.id
+  const placeholder = document.createElement('span')
+  placeholder.className = 'thumbnail-placeholder'
+  const camera = document.createElement('i')
+  const label = document.createElement('span')
+  label.textContent = 'Loading preview'
+  placeholder.append(camera, label)
+  thumbnail.append(placeholder)
+  return thumbnail
+}
+
 function renderSegment(segment) {
   const card = document.createElement('article')
   card.className = 'segment-card'
+  const thumbnail = createThumbnail(segment)
 
   const timeBlock = document.createElement('div')
   timeBlock.className = 'segment-time'
@@ -233,8 +251,50 @@ function renderSegment(segment) {
   const deleteButton = makeButton('Delete', 'text-button danger-text', () => deleteSegment(segment))
   actions.append(playButton, mergeButton, deleteButton)
 
-  card.append(timeBlock, details, actions)
+  card.append(thumbnail, timeBlock, details, actions)
   return card
+}
+
+async function loadThumbnails(version) {
+  const segments = [...state.segments]
+  let nextIndex = 0
+
+  const loadNext = async () => {
+    while (nextIndex < segments.length) {
+      const segment = segments[nextIndex]
+      nextIndex += 1
+      const thumbnail = document.querySelector(`[data-thumbnail="${segment.id}"]`)
+
+      if (!thumbnail) {
+        continue
+      }
+
+      try {
+        const imageUrl = await window.dashcam.getSegmentThumbnail(segment.id)
+
+        if (version !== state.scanVersion || !thumbnail.isConnected) {
+          continue
+        }
+
+        thumbnail.classList.remove('thumbnail-loading')
+
+        if (imageUrl) {
+          const image = document.createElement('img')
+          image.src = imageUrl
+          image.alt = `Front camera preview from ${formatClock(segment.start)}`
+          thumbnail.replaceChildren(image)
+        } else {
+          thumbnail.querySelector('.thumbnail-placeholder span').textContent = 'No preview'
+        }
+      } catch {
+        thumbnail.classList.remove('thumbnail-loading')
+        thumbnail.querySelector('.thumbnail-placeholder span').textContent = 'No preview'
+      }
+    }
+  }
+
+  const workerCount = Math.min(3, segments.length)
+  await Promise.all(Array.from({ length: workerCount }, loadNext))
 }
 
 function renderResults() {
@@ -258,6 +318,8 @@ function renderResults() {
     for (const segment of state.segments) {
       segmentsList.append(renderSegment(segment))
     }
+
+    loadThumbnails(state.scanVersion)
   }
 
   const totals = state.totals
@@ -532,8 +594,78 @@ async function deleteSegment(segment) {
   }
 }
 
+function renderToolStatus(tool, status) {
+  const statusElement = document.querySelector(`#${tool}-status`)
+  const statusText = statusElement.querySelector('span')
+  const pathElement = document.querySelector(`#${tool}-path`)
+  const clearButton = document.querySelector(`#clear-${tool}`)
+  const chooseButton = document.querySelector(`#choose-${tool}`)
+
+  statusElement.classList.toggle('available', status.available)
+  statusElement.classList.toggle('unavailable', !status.available)
+  statusText.textContent = status.available
+    ? (status.selected ? 'Selected' : 'Detected automatically')
+    : 'Not found'
+  pathElement.textContent = status.path || `Choose the ${tool === 'ffmpeg' ? 'FFmpeg' : 'VLC'} executable`
+  pathElement.title = status.path || ''
+  clearButton.classList.toggle('hidden', !status.selected)
+  chooseButton.textContent = status.selected ? 'Change' : 'Choose'
+}
+
+function renderToolSettings(status) {
+  state.tools = status
+  renderToolStatus('ffmpeg', status.ffmpeg)
+  renderToolStatus('vlc', status.vlc)
+}
+
+async function refreshToolSettings() {
+  try {
+    renderToolSettings(await window.dashcam.getToolStatus())
+  } catch (error) {
+    showError(error)
+  }
+}
+
+async function chooseExternalTool(tool) {
+  try {
+    renderToolSettings(await window.dashcam.chooseTool(tool))
+
+    if (tool === 'ffmpeg' && state.rootPath) {
+      renderResults()
+    }
+  } catch (error) {
+    showError(error)
+  }
+}
+
+async function clearExternalTool(tool) {
+  try {
+    renderToolSettings(await window.dashcam.clearTool(tool))
+
+    if (tool === 'ffmpeg' && state.rootPath) {
+      renderResults()
+    }
+  } catch (error) {
+    showError(error)
+  }
+}
+
 browseButton.addEventListener('click', chooseSource)
 scanButton.addEventListener('click', () => scan())
+toolsButton.addEventListener('click', async () => {
+  await refreshToolSettings()
+  toolsDialog.showModal()
+})
+document.querySelector('#tools-close').addEventListener('click', () => toolsDialog.close())
+document.querySelector('#tools-done').addEventListener('click', () => toolsDialog.close())
+document.querySelector('#choose-ffmpeg').addEventListener('click', () => chooseExternalTool('ffmpeg'))
+document.querySelector('#choose-vlc').addEventListener('click', () => chooseExternalTool('vlc'))
+document.querySelector('#clear-ffmpeg').addEventListener('click', () => clearExternalTool('ffmpeg'))
+document.querySelector('#clear-vlc').addEventListener('click', () => clearExternalTool('vlc'))
+toolsDialog.addEventListener('cancel', (event) => {
+  event.preventDefault()
+  toolsDialog.close()
+})
 
 for (const input of document.querySelectorAll('input[name="filter-mode"]')) {
   input.addEventListener('change', () => {
@@ -678,3 +810,4 @@ document.querySelector('#error-close').addEventListener('click', () => errorDial
 
 updateFilterControls()
 renderResults()
+refreshToolSettings()

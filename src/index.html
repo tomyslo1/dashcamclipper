@@ -21,6 +21,7 @@
           <h1>Dashcam Clipper</h1>
           <p>Find a drive, keep the useful part, archive it.</p>
         </div>
+        <button id="tools-button" class="secondary-button header-button" type="button">External tools</button>
       </header>
 
       <main>
@@ -107,6 +108,56 @@
         </section>
       </main>
     </div>
+
+    <dialog id="tools-dialog" class="modal tools-modal">
+      <div class="modal-heading">
+        <div>
+          <span class="eyebrow">Settings</span>
+          <h2>External tools</h2>
+        </div>
+        <button id="tools-close" class="icon-button" type="button" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Dashcam Clipper searches common locations automatically. Select an executable here if yours is installed somewhere else.</p>
+
+      <div class="tool-list">
+        <article class="tool-row">
+          <div class="tool-badge" aria-hidden="true">FF</div>
+          <div class="tool-information">
+            <div class="tool-title-line">
+              <strong>FFmpeg</strong>
+              <span id="ffmpeg-status" class="tool-status"><i></i><span>Checking…</span></span>
+            </div>
+            <p>Creates thumbnails, combines cameras, and saves trims.</p>
+            <code id="ffmpeg-path" class="tool-path">Searching common locations…</code>
+          </div>
+          <div class="tool-actions">
+            <button id="choose-ffmpeg" class="secondary-button" type="button">Choose</button>
+            <button id="clear-ffmpeg" class="text-button hidden" type="button">Use automatic</button>
+          </div>
+        </article>
+
+        <article class="tool-row">
+          <div class="tool-badge" aria-hidden="true">VLC</div>
+          <div class="tool-information">
+            <div class="tool-title-line">
+              <strong>VLC media player</strong>
+              <span id="vlc-status" class="tool-status"><i></i><span>Checking…</span></span>
+            </div>
+            <p>Plays complete driving segments and merged previews.</p>
+            <code id="vlc-path" class="tool-path">Searching common locations…</code>
+          </div>
+          <div class="tool-actions">
+            <button id="choose-vlc" class="secondary-button" type="button">Choose</button>
+            <button id="clear-vlc" class="text-button hidden" type="button">Use automatic</button>
+          </div>
+        </article>
+      </div>
+
+      <p class="tools-note">Segment thumbnails appear when FFmpeg is available. The original camera files are never changed while creating previews.</p>
+      <div class="modal-actions">
+        <button id="tools-done" class="primary-button" type="button">Done</button>
+      </div>
+    </dialog>
 
     <dialog id="name-dialog" class="modal small-modal">
       <form id="name-form">

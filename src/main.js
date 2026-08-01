@@ -20,16 +20,30 @@ const {
 const {
   cleanupTemporaryFiles,
   discardTemporaryVideo,
+  findFfmpeg,
+  findVlc,
+  generateSegmentThumbnail,
   mergeSegment,
   playFileInVlc,
   playSegmentInVlc,
-  saveTrimmedVideo
+  saveTrimmedVideo,
+  setToolOverrides,
+  validateToolExecutable
 } = require('./lib/media')
+
+const {
+  readToolSettings,
+  writeToolSettings
+} = require('./lib/tool-settings')
 
 let mainWindow = null
 let activeProcess = null
 let currentRootPath = null
 let currentFilters = { mode: 'all' }
+let toolSettings = {
+  ffmpegPath: '',
+  vlcPath: ''
+}
 const segmentsById = new Map()
 const temporaryOutputs = new Map()
 
@@ -80,6 +94,37 @@ function setActiveProcess(child) {
   activeProcess = child
 }
 
+function getToolStatus() {
+  const ffmpegPath = findFfmpeg()
+  const vlcPath = findVlc()
+
+  return {
+    ffmpeg: {
+      available: Boolean(ffmpegPath),
+      path: toolSettings.ffmpegPath || ffmpegPath || '',
+      selected: Boolean(toolSettings.ffmpegPath)
+    },
+    vlc: {
+      available: Boolean(vlcPath),
+      path: toolSettings.vlcPath || vlcPath || '',
+      selected: Boolean(toolSettings.vlcPath)
+    }
+  }
+}
+
+function normalizeToolPath(tool, selectedPath) {
+  if (process.platform === 'darwin' && tool === 'vlc' && selectedPath.toLowerCase().endsWith('.app')) {
+    return path.join(selectedPath, 'Contents', 'MacOS', 'VLC')
+  }
+
+  return selectedPath
+}
+
+async function saveCurrentToolSettings() {
+  toolSettings = await writeToolSettings(app.getPath('userData'), toolSettings)
+  setToolOverrides(toolSettings)
+}
+
 async function updateScan(rootPath, filters) {
   const result = await scanSource(rootPath, filters)
   segmentsById.clear()
@@ -99,6 +144,53 @@ async function updateScan(rootPath, filters) {
 }
 
 function registerHandlers() {
+  ipcMain.handle('get-tool-status', () => getToolStatus())
+
+  ipcMain.handle('choose-tool', async (_event, tool) => {
+    if (!['ffmpeg', 'vlc'].includes(tool)) {
+      throw new Error('Unknown external tool.')
+    }
+
+    const name = tool === 'ffmpeg' ? 'FFmpeg' : 'VLC'
+    const dialogOptions = {
+      title: `Choose the ${name} executable`,
+      properties: ['openFile']
+    }
+
+    if (process.platform === 'win32') {
+      dialogOptions.filters = [
+        { name: 'Programs', extensions: ['exe'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    }
+
+    const result = await dialog.showOpenDialog(mainWindow, dialogOptions)
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return getToolStatus()
+    }
+
+    const selectedPath = normalizeToolPath(tool, result.filePaths[0])
+
+    if (!validateToolExecutable(tool, selectedPath)) {
+      throw new Error(`${name} could not be started from the selected file. Choose its executable and try again.`)
+    }
+
+    toolSettings[`${tool}Path`] = selectedPath
+    await saveCurrentToolSettings()
+    return getToolStatus()
+  })
+
+  ipcMain.handle('clear-tool', async (_event, tool) => {
+    if (!['ffmpeg', 'vlc'].includes(tool)) {
+      throw new Error('Unknown external tool.')
+    }
+
+    toolSettings[`${tool}Path`] = ''
+    await saveCurrentToolSettings()
+    return getToolStatus()
+  })
+
   ipcMain.handle('choose-source', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Choose the folder containing DCIMA and DCIMB',
@@ -125,6 +217,11 @@ function registerHandlers() {
   ipcMain.handle('play-segment', async (_event, segmentId) => {
     const segment = getSegment(segmentId)
     await playSegmentInVlc(segment.clips)
+  })
+
+  ipcMain.handle('get-segment-thumbnail', async (_event, segmentId) => {
+    const segment = getSegment(segmentId)
+    return generateSegmentThumbnail(segment)
   })
 
   ipcMain.handle('merge-segment', async (_event, segmentId, name) => {
@@ -267,6 +364,8 @@ function registerHandlers() {
 app.setName('Dashcam Clipper')
 
 app.whenReady().then(async () => {
+  toolSettings = await readToolSettings(app.getPath('userData'))
+  setToolOverrides(toolSettings)
   await cleanupTemporaryFiles().catch(() => {})
   registerHandlers()
   createWindow()

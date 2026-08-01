@@ -1,8 +1,21 @@
 const { spawn, spawnSync } = require('node:child_process')
 const crypto = require('node:crypto')
+const fsSync = require('node:fs')
 const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
+
+let toolOverrides = {
+  ffmpegPath: '',
+  vlcPath: ''
+}
+
+function setToolOverrides(settings) {
+  toolOverrides = {
+    ffmpegPath: typeof settings?.ffmpegPath === 'string' ? settings.ffmpegPath : '',
+    vlcPath: typeof settings?.vlcPath === 'string' ? settings.vlcPath : ''
+  }
+}
 
 function canRun(command, args = ['-version']) {
   if (!command) {
@@ -22,6 +35,10 @@ function canRun(command, args = ['-version']) {
 }
 
 function findFfmpeg() {
+  if (toolOverrides.ffmpegPath) {
+    return canRun(toolOverrides.ffmpegPath) ? toolOverrides.ffmpegPath : null
+  }
+
   const candidates = [
     process.env.DASHCAM_CLIPPER_FFMPEG,
     process.env.FFMPEG_PATH,
@@ -32,6 +49,10 @@ function findFfmpeg() {
 }
 
 function findVlc() {
+  if (toolOverrides.vlcPath) {
+    return isExecutableFile(toolOverrides.vlcPath) ? toolOverrides.vlcPath : null
+  }
+
   const candidates = process.platform === 'win32'
     ? [
         process.env.DASHCAM_CLIPPER_VLC,
@@ -45,7 +66,47 @@ function findVlc() {
         '/Applications/VLC.app/Contents/MacOS/VLC'
       ]
 
-  return candidates.find((candidate) => canRun(candidate, ['--version'])) || null
+  return candidates.find((candidate) => {
+    if (!candidate) {
+      return false
+    }
+
+    if (path.isAbsolute(candidate)) {
+      return isExecutableFile(candidate)
+    }
+
+    const locator = process.platform === 'win32' ? 'where.exe' : 'which'
+    const result = spawnSync(locator, [candidate], {
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true
+    })
+    return !result.error && result.status === 0
+  }) || null
+}
+
+function isExecutableFile(filePath) {
+  if (!filePath) {
+    return false
+  }
+
+  try {
+    return fsSync.statSync(filePath).isFile()
+  } catch {
+    return false
+  }
+}
+
+function validateToolExecutable(tool, filePath) {
+  if (tool === 'ffmpeg') {
+    return canRun(filePath)
+  }
+
+  if (tool === 'vlc') {
+    return isExecutableFile(filePath)
+  }
+
+  return false
 }
 
 async function getTempFolder() {
@@ -61,12 +122,80 @@ async function cleanupTemporaryFiles() {
   for (const entry of entries) {
     const isOwnedFile = entry.isFile() && (
       (entry.name.startsWith('merged-') && entry.name.endsWith('.mp4')) ||
-      (entry.name.startsWith('segment-') && entry.name.endsWith('.m3u8'))
+      (entry.name.startsWith('segment-') && entry.name.endsWith('.m3u8')) ||
+      (entry.name.startsWith('thumbnail-') && entry.name.endsWith('.jpg'))
     )
 
     if (isOwnedFile) {
       await fs.rm(path.join(folder, entry.name), { force: true })
     }
+  }
+}
+
+function buildThumbnailArguments(inputPath, outputPath) {
+  return [
+    '-y',
+    '-ss',
+    '0.25',
+    '-i',
+    inputPath,
+    '-frames:v',
+    '1',
+    '-vf',
+    'scale=320:-2',
+    '-q:v',
+    '4',
+    outputPath
+  ]
+}
+
+async function generateSegmentThumbnail(segment) {
+  const ffmpeg = findFfmpeg()
+
+  if (!ffmpeg || !segment?.clips?.[0]?.front?.path) {
+    return null
+  }
+
+  const tempFolder = await getTempFolder()
+  const outputPath = path.join(tempFolder, `thumbnail-${segment.id}.jpg`)
+
+  const existingImage = await fs.readFile(outputPath).catch(() => null)
+
+  if (existingImage?.length > 0) {
+    return `data:image/jpeg;base64,${existingImage.toString('base64')}`
+  }
+
+  try {
+    const args = buildThumbnailArguments(segment.clips[0].front.path, outputPath)
+
+    await new Promise((resolve, reject) => {
+      const child = spawn(ffmpeg, args, { windowsHide: true, stdio: 'ignore' })
+      const timeout = setTimeout(() => {
+        child.kill()
+        reject(new Error('Thumbnail generation timed out.'))
+      }, 15000)
+
+      child.on('error', (error) => {
+        clearTimeout(timeout)
+        reject(error)
+      })
+
+      child.on('close', (code) => {
+        clearTimeout(timeout)
+
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(new Error(`FFmpeg stopped with code ${code}.`))
+        }
+      })
+    })
+
+    const image = await fs.readFile(outputPath)
+    return `data:image/jpeg;base64,${image.toString('base64')}`
+  } catch {
+    await fs.rm(outputPath, { force: true })
+    return null
   }
 }
 
@@ -436,17 +565,21 @@ async function discardTemporaryVideo(filePath) {
 
 module.exports = {
   buildMergeArguments,
+  buildThumbnailArguments,
   cleanupTemporaryFiles,
   discardTemporaryVideo,
   findEncoder,
   findFfmpeg,
   findVlc,
   formatFilenameDate,
+  generateSegmentThumbnail,
   mergeSegment,
   parseProgressLine,
   playFileInVlc,
   playSegmentInVlc,
   processedFolder,
   sanitizeClipName,
-  saveTrimmedVideo
+  saveTrimmedVideo,
+  setToolOverrides,
+  validateToolExecutable
 }
