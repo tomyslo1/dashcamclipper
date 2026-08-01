@@ -113,3 +113,43 @@ test('scans matching camera folders and returns public trip data', async (contex
   assert.equal(result.totals.front, 2)
   assert.equal(result.totals.rear, 2)
 })
+
+test('compares a removable source with server files and server metadata', async (context) => {
+  const rootPath = await fs.mkdtemp(path.join(process.cwd(), '.dashcam-library-test-'))
+  context.after(() => fs.rm(rootPath, { recursive: true, force: true }))
+  const sourcePath = path.join(rootPath, 'card')
+  const libraryPath = path.join(rootPath, 'server')
+
+  for (const cameraFolder of ['DCIMA', 'DCIMB']) {
+    await fs.mkdir(path.join(sourcePath, cameraFolder), { recursive: true })
+    await fs.mkdir(path.join(libraryPath, cameraFolder), { recursive: true })
+  }
+
+  for (const [name, time] of [
+    ['Existing.AVI', new Date(2026, 6, 31, 13, 31)],
+    ['NewClip.AVI', new Date(2026, 6, 31, 13, 32)]
+  ]) {
+    for (const cameraFolder of ['DCIMA', 'DCIMB']) {
+      const sourceFile = path.join(sourcePath, cameraFolder, name)
+      await fs.writeFile(sourceFile, name)
+      await fs.utimes(sourceFile, time, time)
+    }
+  }
+
+  for (const cameraFolder of ['DCIMA', 'DCIMB']) {
+    await fs.writeFile(path.join(libraryPath, cameraFolder, 'Existing.AVI'), 'already stored')
+  }
+
+  await setClipsProcessed(libraryPath, ['existing.avi'], true)
+  const result = await scanSource(sourcePath, { mode: 'all' }, libraryPath)
+
+  assert.equal(result.sourceIsLibrary, false)
+  assert.equal(result.importPlan.length, 2)
+  assert.equal(result.totals.newFront, 1)
+  assert.equal(result.totals.newRear, 1)
+  assert.ok(result.importPlan.every((item) => item.relativePath === 'NewClip.AVI'))
+  assert.equal(result.segments[0].processedCount, 1)
+  assert.equal(result.segments[0].newClipCount, 1)
+  assert.equal(await fs.access(path.join(sourcePath, 'dashcamclipper')).then(() => true).catch(() => false), false)
+  assert.equal(await fs.access(path.join(libraryPath, 'dashcamclipper', 'metadata.json')).then(() => true).catch(() => false), true)
+})

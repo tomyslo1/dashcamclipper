@@ -5,6 +5,9 @@ const state = {
   scanVersion: 0,
   trim: null,
   tools: null,
+  library: null,
+  sourceIsLibrary: false,
+  importStatus: null,
   processingView: 'all',
   expandedSegments: new Set(),
   toastTimer: null
@@ -48,6 +51,10 @@ const errorMessage = document.querySelector('#error-message')
 const toast = document.querySelector('#toast')
 const toolsDialog = document.querySelector('#tools-dialog')
 const toolsButton = document.querySelector('#tools-button')
+const libraryPath = document.querySelector('#library-path')
+const chooseLibraryButton = document.querySelector('#choose-library-button')
+const viewLibraryButton = document.querySelector('#view-library-button')
+const importBanner = document.querySelector('#import-banner')
 
 function getFilterMode() {
   return document.querySelector('input[name="filter-mode"]:checked').value
@@ -230,6 +237,21 @@ function createProcessingState(segment) {
   return status
 }
 
+function createSegmentStatusLine(segment) {
+  const line = document.createElement('div')
+  line.className = 'segment-status-line'
+  line.append(createProcessingState(segment))
+
+  if (segment.newClipCount > 0) {
+    const newStatus = document.createElement('span')
+    newStatus.className = 'new-state'
+    newStatus.textContent = `${segment.newClipCount} new clip${segment.newClipCount === 1 ? '' : 's'}`
+    line.append(newStatus)
+  }
+
+  return line
+}
+
 function createClipList(segment) {
   const list = document.createElement('div')
   list.className = 'clip-list'
@@ -250,7 +272,11 @@ function createClipList(segment) {
     name.title = clip.fileName
     const cameras = document.createElement('span')
     cameras.className = 'clip-cameras'
-    cameras.textContent = clip.hasRear ? 'Front + rear' : 'Front only'
+    const cameraText = clip.hasRear ? 'Front + rear' : 'Front only'
+    const newCameras = [clip.newFront ? 'front' : '', clip.newRear ? 'rear' : ''].filter(Boolean)
+    cameras.textContent = newCameras.length > 0
+      ? `${cameraText} · New ${newCameras.join(' + ')}`
+      : cameraText
     const processingButton = makeButton(
       clip.processed ? 'Processed ✓' : 'Mark processed',
       `mini-button clip-process-button${clip.processed ? ' active' : ''}`,
@@ -283,7 +309,7 @@ function renderSegment(segment) {
   details.className = 'segment-details'
   const primaryDetails = document.createElement('p')
   primaryDetails.textContent = `${formatDuration(segment.durationMs)} · ${segment.clipCount} clips · ${formatBytes(segment.totalSize)}`
-  details.append(createProcessingState(segment), primaryDetails)
+  details.append(createSegmentStatusLine(segment), primaryDetails)
 
   if (segment.pairedCount === segment.clipCount) {
     const cameraDetails = document.createElement('p')
@@ -398,9 +424,47 @@ function updateProcessingTabs() {
   }
 }
 
+function applyScanResult(result) {
+  state.segments = result.segments
+  state.totals = result.totals
+  state.sourceIsLibrary = result.sourceIsLibrary
+  state.importStatus = result.importStatus
+}
+
+function renderImportStatus() {
+  const status = state.importStatus
+
+  if (!state.rootPath || state.sourceIsLibrary || !status) {
+    importBanner.classList.add('hidden')
+    return
+  }
+
+  const importTitle = document.querySelector('#import-title')
+  const importDescription = document.querySelector('#import-description')
+  const importButton = document.querySelector('#import-button')
+  const importIcon = importBanner.querySelector('.import-icon')
+  importBanner.classList.remove('hidden')
+  importBanner.classList.toggle('complete', status.newFiles === 0)
+
+  if (status.newFiles === 0) {
+    importTitle.textContent = 'This source is already in the server library'
+    importDescription.textContent = 'No files need to be copied. Existing server files were left untouched.'
+    importButton.classList.add('hidden')
+    importIcon.textContent = '✓'
+    return
+  }
+
+  const fileWord = status.newFiles === 1 ? 'file' : 'files'
+  importTitle.textContent = `${status.newFiles} new camera ${fileWord} found`
+  importDescription.textContent = `${status.newFront} front · ${status.newRear} rear · ${formatBytes(status.newBytes)} to copy without overwriting`
+  importButton.classList.remove('hidden')
+  importIcon.textContent = '↓'
+}
+
 function renderResults() {
   segmentsList.replaceChildren()
   loadingState.classList.add('hidden')
+  renderImportStatus()
 
   if (!state.rootPath) {
     resultsHeading.classList.add('hidden')
@@ -442,6 +506,7 @@ function renderResults() {
 }
 
 function setLoading() {
+  importBanner.classList.add('hidden')
   emptyState.classList.add('hidden')
   resultsHeading.classList.add('hidden')
   segmentsList.replaceChildren()
@@ -472,8 +537,7 @@ async function scan(showLoading = true) {
       return
     }
 
-    state.segments = result.segments
-    state.totals = result.totals
+    applyScanResult(result)
     renderResults()
   } catch (error) {
     if (version === state.scanVersion) {
@@ -703,8 +767,7 @@ async function deleteSegment(segment) {
 
     if (response.deleted && response.result) {
       state.expandedSegments.delete(segment.id)
-      state.segments = response.result.segments
-      state.totals = response.result.totals
+      applyScanResult(response.result)
       renderResults()
       showToast('The segment was moved to the Recycle Bin or Trash.')
     }
@@ -741,6 +804,89 @@ async function setProcessingState(segment, scope, processed, clipKey, button) {
   } catch (error) {
     button.disabled = false
     button.textContent = previousLabel
+    showError(error)
+  }
+}
+
+function renderLibraryStatus(status) {
+  state.library = status
+  chooseLibraryButton.textContent = status.configured ? 'Change library' : 'Choose library'
+  viewLibraryButton.disabled = !status.available
+
+  if (status.path) {
+    libraryPath.textContent = status.available ? status.path : `${status.path} (unavailable)`
+    libraryPath.title = status.path
+    libraryPath.classList.remove('empty')
+  } else {
+    libraryPath.textContent = 'Choose the always-available folder on your server'
+    libraryPath.title = ''
+    libraryPath.classList.add('empty')
+  }
+}
+
+async function refreshLibraryStatus() {
+  try {
+    renderLibraryStatus(await window.dashcam.getLibraryStatus())
+  } catch (error) {
+    showError(error)
+  }
+}
+
+async function viewServerLibrary() {
+  if (!state.library?.available) {
+    showError(new Error('Choose an available server library first.'))
+    return
+  }
+
+  if (state.rootPath !== state.library.path) {
+    state.expandedSegments.clear()
+    state.processingView = 'all'
+  }
+
+  state.rootPath = state.library.path
+  sourcePath.textContent = state.rootPath
+  sourcePath.classList.remove('empty')
+  scanButton.disabled = false
+  await scan()
+}
+
+async function chooseServerLibrary() {
+  const wasViewingLibrary = !state.rootPath || state.sourceIsLibrary
+
+  try {
+    const status = await window.dashcam.chooseLibrary()
+    renderLibraryStatus(status)
+
+    if (!status.available) {
+      return
+    }
+
+    if (wasViewingLibrary) {
+      await viewServerLibrary()
+    } else {
+      await scan()
+    }
+  } catch (error) {
+    showError(error)
+  }
+}
+
+async function importNewClips() {
+  if (!state.importStatus || state.importStatus.newFiles === 0) {
+    return
+  }
+
+  openProgress('Importing new clips to the server')
+
+  try {
+    const response = await window.dashcam.importNewClips()
+    closeProgress()
+    applyScanResult(response.result)
+    renderResults()
+    showToast(`${response.copied} new files imported${response.skipped ? ` · ${response.skipped} already existed` : ''}.`)
+  } catch (error) {
+    closeProgress()
+    await scan(false)
     showError(error)
   }
 }
@@ -803,6 +949,9 @@ async function clearExternalTool(tool) {
 
 browseButton.addEventListener('click', chooseSource)
 scanButton.addEventListener('click', () => scan())
+chooseLibraryButton.addEventListener('click', chooseServerLibrary)
+viewLibraryButton.addEventListener('click', viewServerLibrary)
+document.querySelector('#import-button').addEventListener('click', importNewClips)
 for (const tab of document.querySelectorAll('.processing-tab')) {
   tab.addEventListener('click', () => {
     state.processingView = tab.dataset.processingView
@@ -968,3 +1117,4 @@ document.querySelector('#error-close').addEventListener('click', () => errorDial
 updateFilterControls()
 renderResults()
 refreshToolSettings()
+refreshLibraryStatus()

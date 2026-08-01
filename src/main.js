@@ -37,16 +37,33 @@ const {
   writeToolSettings
 } = require('./lib/tool-settings')
 
-const { setClipsProcessed } = require('./lib/processing-metadata')
+const {
+  readLibrarySettings,
+  writeLibrarySettings
+} = require('./lib/library-settings')
+
+const { copyImportPlan } = require('./lib/import-clips')
+
+const {
+  readProcessingMetadata,
+  setClipsProcessed
+} = require('./lib/processing-metadata')
 
 let mainWindow = null
 let activeProcess = null
 let currentRootPath = null
 let currentFilters = { mode: 'all' }
 let metadataWriteQueue = Promise.resolve()
+let currentImportPlan = []
+let currentLibraryFolders = null
+let importInProgress = false
+let importCancelled = false
 let toolSettings = {
   ffmpegPath: '',
   vlcPath: ''
+}
+let librarySettings = {
+  libraryPath: ''
 }
 const segmentsById = new Map()
 const temporaryOutputs = new Map()
@@ -129,6 +146,23 @@ async function saveCurrentToolSettings() {
   setToolOverrides(toolSettings)
 }
 
+async function saveCurrentLibrarySettings() {
+  librarySettings = await writeLibrarySettings(app.getPath('userData'), librarySettings)
+}
+
+async function getLibraryStatus() {
+  if (!librarySettings.libraryPath) {
+    return { configured: false, available: false, path: '' }
+  }
+
+  try {
+    await findCameraFolders(librarySettings.libraryPath)
+    return { configured: true, available: true, path: librarySettings.libraryPath }
+  } catch {
+    return { configured: true, available: false, path: librarySettings.libraryPath }
+  }
+}
+
 function queueMetadataWrite(operation) {
   const result = metadataWriteQueue.then(operation, operation)
   metadataWriteQueue = result.catch(() => {})
@@ -161,7 +195,11 @@ async function updateProcessingState(options) {
     throw new Error('Choose a segment or clip to update.')
   }
 
-  const metadata = await setClipsProcessed(currentRootPath, clipKeys, options.processed)
+  if (!librarySettings.libraryPath) {
+    throw new Error('Choose the server library before changing processing state.')
+  }
+
+  const metadata = await setClipsProcessed(librarySettings.libraryPath, clipKeys, options.processed)
   const changedKeys = new Set(clipKeys)
 
   for (const currentSegment of segmentsById.values()) {
@@ -179,7 +217,11 @@ async function updateProcessingState(options) {
 }
 
 async function updateScan(rootPath, filters) {
-  const result = await scanSource(rootPath, filters)
+  if (!librarySettings.libraryPath) {
+    throw new Error('Choose the permanent server library before scanning a source.')
+  }
+
+  const result = await scanSource(rootPath, filters, librarySettings.libraryPath)
   segmentsById.clear()
 
   for (const segment of result.segments) {
@@ -188,15 +230,90 @@ async function updateScan(rootPath, filters) {
 
   currentRootPath = rootPath
   currentFilters = filters
+  currentImportPlan = result.importPlan
+  currentLibraryFolders = {
+    frontPath: result.libraryFrontPath,
+    rearPath: result.libraryRearPath
+  }
 
   return {
     rootPath: result.rootPath,
+    libraryPath: result.libraryRootPath,
+    sourceIsLibrary: result.sourceIsLibrary,
+    importStatus: {
+      newFiles: result.importPlan.length,
+      newFront: result.totals.newFront,
+      newRear: result.totals.newRear,
+      newBytes: result.totals.newBytes
+    },
     segments: result.segments.map(toPublicSegment),
     totals: result.totals
   }
 }
 
+async function importNewClips() {
+  if (activeProcess || importInProgress) {
+    throw new Error('Another media or import job is already running.')
+  }
+
+  if (!currentRootPath || !currentLibraryFolders) {
+    throw new Error('Scan a microSD card source before importing clips.')
+  }
+
+  if (currentImportPlan.length === 0) {
+    return {
+      copied: 0,
+      skipped: 0,
+      result: await updateScan(currentRootPath, currentFilters)
+    }
+  }
+
+  importInProgress = true
+  importCancelled = false
+  const plan = [...currentImportPlan]
+
+  try {
+    sendProgress({ phase: `Importing 0 of ${plan.length} new files`, percent: 0 })
+    const copyResult = await copyImportPlan(
+      plan,
+      currentLibraryFolders,
+      (progress) => sendProgress({
+        phase: `Importing ${progress.current} of ${progress.total} new files`,
+        percent: progress.percent
+      }),
+      () => importCancelled
+    )
+    return {
+      ...copyResult,
+      result: await updateScan(currentRootPath, currentFilters)
+    }
+  } finally {
+    importInProgress = false
+    importCancelled = false
+  }
+}
+
 function registerHandlers() {
+  ipcMain.handle('get-library-status', () => getLibraryStatus())
+
+  ipcMain.handle('choose-library', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose the permanent server library',
+      properties: ['openDirectory']
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return getLibraryStatus()
+    }
+
+    const selectedPath = result.filePaths[0]
+    await findCameraFolders(selectedPath)
+    await readProcessingMetadata(selectedPath)
+    librarySettings.libraryPath = selectedPath
+    await saveCurrentLibrarySettings()
+    return getLibraryStatus()
+  })
+
   ipcMain.handle('get-tool-status', () => getToolStatus())
 
   ipcMain.handle('choose-tool', async (_event, tool) => {
@@ -245,6 +362,12 @@ function registerHandlers() {
   })
 
   ipcMain.handle('choose-source', async () => {
+    const libraryStatus = await getLibraryStatus()
+
+    if (!libraryStatus.available) {
+      throw new Error('Choose an available server library before selecting a source.')
+    }
+
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Choose the folder containing DCIMA and DCIMB',
       properties: ['openDirectory']
@@ -281,6 +404,8 @@ function registerHandlers() {
     return queueMetadataWrite(() => updateProcessingState(options))
   })
 
+  ipcMain.handle('import-new-clips', () => importNewClips())
+
   ipcMain.handle('merge-segment', async (_event, segmentId, name) => {
     if (activeProcess) {
       throw new Error('Another media job is already running.')
@@ -307,6 +432,11 @@ function registerHandlers() {
   ipcMain.handle('cancel-media-job', () => {
     if (activeProcess) {
       activeProcess.kill()
+      return true
+    }
+
+    if (importInProgress) {
+      importCancelled = true
       return true
     }
 
@@ -422,6 +552,7 @@ app.setName('Dashcam Clipper')
 
 app.whenReady().then(async () => {
   toolSettings = await readToolSettings(app.getPath('userData'))
+  librarySettings = await readLibrarySettings(app.getPath('userData'))
   setToolOverrides(toolSettings)
   await cleanupTemporaryFiles().catch(() => {})
   registerHandlers()

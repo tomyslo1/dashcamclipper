@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('dashcam', {
+  getLibraryStatus: () => ipcRenderer.invoke('get-library-status'),
+  chooseLibrary: () => ipcRenderer.invoke('choose-library'),
   getToolStatus: () => ipcRenderer.invoke('get-tool-status'),
   chooseTool: (tool) => ipcRenderer.invoke('choose-tool', tool),
   clearTool: (tool) => ipcRenderer.invoke('clear-tool', tool),
@@ -9,6 +11,7 @@ contextBridge.exposeInMainWorld('dashcam', {
   playSegment: (segmentId) => ipcRenderer.invoke('play-segment', segmentId),
   getSegmentThumbnail: (segmentId) => ipcRenderer.invoke('get-segment-thumbnail', segmentId),
   setProcessingState: (options) => ipcRenderer.invoke('set-processing-state', options),
+  importNewClips: () => ipcRenderer.invoke('import-new-clips'),
   mergeSegment: (segmentId, name) => ipcRenderer.invoke('merge-segment', segmentId, name),
   cancelMediaJob: () => ipcRenderer.invoke('cancel-media-job'),
   openOutputInVlc: (outputId) => ipcRenderer.invoke('open-output-in-vlc', outputId),

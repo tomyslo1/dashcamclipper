@@ -25,15 +25,30 @@
       </header>
 
       <main>
+        <section class="panel library-panel" aria-labelledby="library-heading">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Permanent storage</span>
+              <h2 id="library-heading">Server library</h2>
+            </div>
+            <div class="library-actions">
+              <button id="view-library-button" class="secondary-button" type="button" disabled>View library</button>
+              <button id="choose-library-button" class="primary-button" type="button">Choose library</button>
+            </div>
+          </div>
+          <p class="panel-description">The permanent DCIMA and DCIMB location. Processing metadata is always stored here.</p>
+          <div id="library-path" class="source-path empty">Choose the always-available folder on your server</div>
+        </section>
+
         <section class="panel source-panel" aria-labelledby="source-heading">
           <div class="section-heading">
             <div>
-              <span class="eyebrow">Source</span>
-              <h2 id="source-heading">Camera folder</h2>
+              <span class="eyebrow">Browsing source</span>
+              <h2 id="source-heading">Server or microSD folder</h2>
             </div>
             <button id="browse-button" class="primary-button" type="button">Choose folder</button>
           </div>
-          <div id="source-path" class="source-path empty">Select the folder that contains DCIMA and DCIMB</div>
+          <div id="source-path" class="source-path empty">Select a server or microSD folder that contains DCIMA and DCIMB</div>
         </section>
 
         <section class="panel filters-panel" aria-labelledby="filter-heading">
@@ -83,6 +98,15 @@
         </section>
 
         <section class="results-section" aria-live="polite">
+          <div id="import-banner" class="import-banner hidden">
+            <div class="import-icon" aria-hidden="true">↓</div>
+            <div class="import-information">
+              <strong id="import-title">New clips found</strong>
+              <p id="import-description"></p>
+            </div>
+            <button id="import-button" class="primary-button" type="button">Import new clips</button>
+          </div>
+
           <div id="results-heading" class="results-heading hidden">
             <div>
               <span class="eyebrow">Driving segments</span>

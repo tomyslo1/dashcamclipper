@@ -6,17 +6,17 @@ The app runs on Windows and macOS. Installers are not included yet; this reposit
 
 ## What it expects
 
-Choose a folder with this structure:
+First configure an always-available server library with this structure:
 
 ```text
-Selected folder/
+Server library/
 ├── DCIMA/    front camera recordings
 ├── DCIMB/    rear camera recordings
 └── dashcamclipper/
     └── metadata.json    processing state created by the app
 ```
 
-Subfolders inside `DCIMA` and `DCIMB` are scanned too. AVI, MP4, MOV, and MKV files are supported.
+A microSD card source only needs `DCIMA` and `DCIMB`; Dashcam Clipper never creates its metadata folder on the card. Subfolders inside both camera folders are scanned too. AVI, MP4, MOV, and MKV files are supported.
 
 Clip modification times are used as recording times. Consecutive clips belong to one driving segment until there is a gap longer than three minutes. Front and rear clips are paired by relative filename first, then by a recording time within 30 seconds.
 
@@ -60,17 +60,19 @@ corepack pnpm start
 
 ## Workflow
 
-1. Choose the folder that contains `DCIMA` and `DCIMB`.
-2. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
-3. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
-4. Choose a driving segment:
+1. Choose the permanent server library. This path is saved for later launches.
+2. View the server library directly or choose a microSD card as the browsing source.
+3. When viewing a card, import files that do not exist in the server library. Existing server files are never overwritten.
+4. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
+5. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
+6. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips.
    - **Delete** asks twice, then moves both camera files to the Recycle Bin or Trash.
-5. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
-6. Switch between **All**, **Unprocessed**, and **Processed** above the segment list.
-7. Name a merged clip and set its start and end in the built-in trimming screen.
-8. Save it to the archive.
+7. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
+8. Switch between **All**, **Unprocessed**, and **Processed** above the segment list.
+9. Name a merged clip and set its start and end in the built-in trimming screen.
+10. Save it to the archive.
 
 Finished clips use this filename:
 
@@ -87,9 +89,15 @@ The app reports an error if the archive drive is not connected. It does not sile
 
 ## Processing metadata
 
-Dashcam Clipper creates `dashcamclipper/metadata.json` in the selected source folder. Processed clips are identified by their relative path inside `DCIMA`, so the state continues to work if the microSD card or local folder receives a different drive letter or mount point.
+Dashcam Clipper creates `dashcamclipper/metadata.json` only in the configured server library. Even while browsing a microSD card, processed state is read from and written to that server metadata. Processed clips are identified by their relative path inside `DCIMA`, so the state continues to work if the card or library receives a different drive letter or mount point.
 
 Marking a segment processes every visible clip in that segment. A segment counts as processed only when all of its clips are processed; otherwise it remains under **Unprocessed** and shows the partial count. The metadata file is written separately from the recordings and the video files are not modified.
+
+## Importing from a microSD card
+
+When the browsing source differs from the server library, Dashcam Clipper compares every relative filename in `DCIMA` and `DCIMB`. The import banner reports new front and rear files separately. **Import new clips** copies only missing files to the matching server camera folder, including their original subfolder structure, filename casing, and modification time.
+
+Imports use exclusive file creation. If a destination file already exists, including one created after the scan, it is skipped and never replaced. Processing metadata remains on the server and is not copied to or created on the card.
 
 ## External tools
 

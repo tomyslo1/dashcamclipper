@@ -46,10 +46,12 @@ async function readVideoFiles(folderPath, basePath = folderPath) {
     }
 
     const stats = await fs.stat(fullPath)
+    const relativePath = path.relative(basePath, fullPath).split(path.sep).join('/')
     files.push({
       path: fullPath,
       name: entry.name,
-      relativeKey: path.relative(basePath, fullPath).split(path.sep).join('/').toLowerCase(),
+      relativePath,
+      relativeKey: relativePath.toLowerCase(),
       baseKey: entry.name.toLowerCase(),
       recordedAt: stats.mtime,
       size: stats.size
@@ -108,6 +110,9 @@ function pairCameraFiles(frontFiles, rearFiles) {
       rear: rear || null,
       processed: false,
       processedAt: null,
+      newFront: false,
+      newRear: false,
+      newToLibrary: false,
       size: front.size + (rear?.size || 0)
     })
   }
@@ -179,6 +184,7 @@ function createSegment(clips) {
   }
 
   refreshSegmentProcessing(segment)
+  refreshSegmentImport(segment)
   return segment
 }
 
@@ -199,6 +205,22 @@ function applyProcessingMetadata(segments, metadata) {
   }
 
   return segments
+}
+
+function refreshSegmentImport(segment) {
+  segment.newClipCount = segment.clips.filter((clip) => clip.newToLibrary).length
+  return segment
+}
+
+function pathsEqual(leftPath, rightPath) {
+  const left = path.resolve(leftPath)
+  const right = path.resolve(rightPath)
+
+  if (process.platform === 'win32') {
+    return left.toLowerCase() === right.toLowerCase()
+  }
+
+  return left === right
 }
 
 function groupSegments(clips, maximumGapMs = SEGMENT_GAP_MS) {
@@ -224,28 +246,85 @@ function groupSegments(clips, maximumGapMs = SEGMENT_GAP_MS) {
   return groups
 }
 
-async function scanSource(rootPath, filters = {}) {
-  const { frontPath, rearPath } = await findCameraFolders(rootPath)
-  const [frontFiles, rearFiles, metadata] = await Promise.all([
-    readVideoFiles(frontPath),
-    readVideoFiles(rearPath),
-    readProcessingMetadata(rootPath)
+async function scanSource(rootPath, filters = {}, libraryRootPath = rootPath) {
+  const sourceFolders = await findCameraFolders(rootPath)
+  const sourceIsLibrary = pathsEqual(rootPath, libraryRootPath)
+  const libraryFolders = sourceIsLibrary
+    ? sourceFolders
+    : await findCameraFolders(libraryRootPath)
+  const sourceFiles = await Promise.all([
+    readVideoFiles(sourceFolders.frontPath),
+    readVideoFiles(sourceFolders.rearPath)
   ])
+  const libraryFiles = sourceIsLibrary
+    ? sourceFiles
+    : await Promise.all([
+        readVideoFiles(libraryFolders.frontPath),
+        readVideoFiles(libraryFolders.rearPath)
+      ])
+  const [frontFiles, rearFiles] = sourceFiles
+  const [libraryFrontFiles, libraryRearFiles] = libraryFiles
+  const metadata = await readProcessingMetadata(libraryRootPath)
+  const libraryFrontKeys = new Set(libraryFrontFiles.map((file) => file.relativeKey))
+  const libraryRearKeys = new Set(libraryRearFiles.map((file) => file.relativeKey))
+  const importPlan = []
+
+  if (!sourceIsLibrary) {
+    for (const file of frontFiles) {
+      if (!libraryFrontKeys.has(file.relativeKey)) {
+        importPlan.push({
+          camera: 'front',
+          sourcePath: file.path,
+          relativePath: file.relativePath,
+          relativeKey: file.relativeKey,
+          size: file.size
+        })
+      }
+    }
+
+    for (const file of rearFiles) {
+      if (!libraryRearKeys.has(file.relativeKey)) {
+        importPlan.push({
+          camera: 'rear',
+          sourcePath: file.path,
+          relativePath: file.relativePath,
+          relativeKey: file.relativeKey,
+          size: file.size
+        })
+      }
+    }
+  }
+
   const pairing = pairCameraFiles(frontFiles, rearFiles)
+
+  for (const clip of pairing.clips) {
+    clip.newFront = !sourceIsLibrary && !libraryFrontKeys.has(clip.front.relativeKey)
+    clip.newRear = !sourceIsLibrary && Boolean(clip.rear) && !libraryRearKeys.has(clip.rear.relativeKey)
+    clip.newToLibrary = clip.newFront || clip.newRear
+  }
+
   const filteredClips = filterClips(pairing.clips, filters)
   const segments = groupSegments(filteredClips)
   applyProcessingMetadata(segments, metadata)
 
   return {
     rootPath,
-    frontPath,
-    rearPath,
+    frontPath: sourceFolders.frontPath,
+    rearPath: sourceFolders.rearPath,
+    libraryRootPath,
+    libraryFrontPath: libraryFolders.frontPath,
+    libraryRearPath: libraryFolders.rearPath,
+    sourceIsLibrary,
+    importPlan,
     segments,
     totals: {
       front: frontFiles.length,
       rear: rearFiles.length,
       visible: filteredClips.length,
       processedVisible: filteredClips.filter((clip) => clip.processed).length,
+      newFront: importPlan.filter((item) => item.camera === 'front').length,
+      newRear: importPlan.filter((item) => item.camera === 'rear').length,
+      newBytes: importPlan.reduce((total, item) => total + item.size, 0),
       unpairedRear: pairing.unpairedRearCount
     }
   }
@@ -262,13 +341,17 @@ function toPublicSegment(segment) {
     totalSize: segment.totalSize,
     processedCount: segment.processedCount,
     processed: segment.processed,
+    newClipCount: segment.newClipCount,
     clips: segment.clips.map((clip) => ({
       key: clip.key,
       recordedAt: clip.recordedAt.toISOString(),
       fileName: clip.front.name,
       hasRear: Boolean(clip.rear),
       processed: clip.processed,
-      processedAt: clip.processedAt
+      processedAt: clip.processedAt,
+      newFront: clip.newFront,
+      newRear: clip.newRear,
+      newToLibrary: clip.newToLibrary
     }))
   }
 }
@@ -283,6 +366,8 @@ module.exports = {
   parseLocalDate,
   readVideoFiles,
   refreshSegmentProcessing,
+  refreshSegmentImport,
+  pathsEqual,
   scanSource,
   toPublicSegment
 }
