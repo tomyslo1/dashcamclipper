@@ -91,6 +91,18 @@
             <p id="results-summary"></p>
           </div>
 
+          <div id="processing-tabs" class="processing-tabs hidden" role="tablist" aria-label="Processing status">
+            <button class="processing-tab active" data-processing-view="all" type="button" role="tab" aria-selected="true">
+              All <span id="all-count">0</span>
+            </button>
+            <button class="processing-tab" data-processing-view="unprocessed" type="button" role="tab" aria-selected="false">
+              Unprocessed <span id="unprocessed-count">0</span>
+            </button>
+            <button class="processing-tab" data-processing-view="processed" type="button" role="tab" aria-selected="false">
+              Processed <span id="processed-count">0</span>
+            </button>
+          </div>
+
           <div id="empty-state" class="empty-state">
             <div class="empty-icon" aria-hidden="true">
               <span></span><span></span><span></span>

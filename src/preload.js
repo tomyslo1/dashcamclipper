@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('dashcam', {
   scanSource: (rootPath, filters) => ipcRenderer.invoke('scan-source', rootPath, filters),
   playSegment: (segmentId) => ipcRenderer.invoke('play-segment', segmentId),
   getSegmentThumbnail: (segmentId) => ipcRenderer.invoke('get-segment-thumbnail', segmentId),
+  setProcessingState: (options) => ipcRenderer.invoke('set-processing-state', options),
   mergeSegment: (segmentId, name) => ipcRenderer.invoke('merge-segment', segmentId, name),
   cancelMediaJob: () => ipcRenderer.invoke('cancel-media-job'),
   openOutputInVlc: (outputId) => ipcRenderer.invoke('open-output-in-vlc', outputId),

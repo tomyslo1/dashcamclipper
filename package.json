@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/lib/clips.js && node --check src/lib/media.js && node --check src/lib/tool-settings.js"
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/lib/clips.js && node --check src/lib/media.js && node --check src/lib/tool-settings.js && node --check src/lib/processing-metadata.js"
   },
   "license": "MIT",
   "devDependencies": {

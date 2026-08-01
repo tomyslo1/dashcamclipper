@@ -8,8 +8,10 @@ const {
   filterClips,
   groupSegments,
   pairCameraFiles,
-  scanSource
+  scanSource,
+  toPublicSegment
 } = require('../src/lib/clips')
+const { setClipsProcessed } = require('../src/lib/processing-metadata')
 
 function cameraFile(name, time, camera) {
   return {
@@ -97,11 +99,17 @@ test('scans matching camera folders and returns public trip data', async (contex
     await fs.utimes(rearFile, time, time)
   }
 
+  await setClipsProcessed(rootPath, ['one.avi'], true)
   const result = await scanSource(rootPath, { mode: 'all' })
+  const publicSegment = toPublicSegment(result.segments[0])
 
   assert.equal(result.segments.length, 1)
   assert.equal(result.segments[0].clipCount, 2)
   assert.equal(result.segments[0].pairedCount, 2)
+  assert.equal(result.segments[0].processedCount, 1)
+  assert.equal(result.segments[0].processed, false)
+  assert.equal(publicSegment.clips[0].processed, true)
+  assert.equal(publicSegment.clips[1].processed, false)
   assert.equal(result.totals.front, 2)
   assert.equal(result.totals.rear, 2)
 })

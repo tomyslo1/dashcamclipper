@@ -13,6 +13,7 @@ const {
 
 const {
   findCameraFolders,
+  refreshSegmentProcessing,
   scanSource,
   toPublicSegment
 } = require('./lib/clips')
@@ -36,10 +37,13 @@ const {
   writeToolSettings
 } = require('./lib/tool-settings')
 
+const { setClipsProcessed } = require('./lib/processing-metadata')
+
 let mainWindow = null
 let activeProcess = null
 let currentRootPath = null
 let currentFilters = { mode: 'all' }
+let metadataWriteQueue = Promise.resolve()
 let toolSettings = {
   ffmpegPath: '',
   vlcPath: ''
@@ -123,6 +127,55 @@ function normalizeToolPath(tool, selectedPath) {
 async function saveCurrentToolSettings() {
   toolSettings = await writeToolSettings(app.getPath('userData'), toolSettings)
   setToolOverrides(toolSettings)
+}
+
+function queueMetadataWrite(operation) {
+  const result = metadataWriteQueue.then(operation, operation)
+  metadataWriteQueue = result.catch(() => {})
+  return result
+}
+
+async function updateProcessingState(options) {
+  if (!currentRootPath) {
+    throw new Error('Choose and scan a source folder first.')
+  }
+
+  if (!options || typeof options.processed !== 'boolean') {
+    throw new Error('The requested processing state is invalid.')
+  }
+
+  const segment = getSegment(options.segmentId)
+  let clipKeys
+
+  if (options.scope === 'segment') {
+    clipKeys = segment.clips.map((clip) => clip.key)
+  } else if (options.scope === 'clip') {
+    const clip = segment.clips.find((item) => item.key === options.clipKey)
+
+    if (!clip) {
+      throw new Error('This clip is no longer part of the selected segment.')
+    }
+
+    clipKeys = [clip.key]
+  } else {
+    throw new Error('Choose a segment or clip to update.')
+  }
+
+  const metadata = await setClipsProcessed(currentRootPath, clipKeys, options.processed)
+  const changedKeys = new Set(clipKeys)
+
+  for (const currentSegment of segmentsById.values()) {
+    for (const clip of currentSegment.clips) {
+      if (changedKeys.has(clip.key)) {
+        clip.processedAt = metadata.processedClips[clip.key] || null
+        clip.processed = Boolean(clip.processedAt)
+      }
+    }
+
+    refreshSegmentProcessing(currentSegment)
+  }
+
+  return toPublicSegment(segment)
 }
 
 async function updateScan(rootPath, filters) {
@@ -222,6 +275,10 @@ function registerHandlers() {
   ipcMain.handle('get-segment-thumbnail', async (_event, segmentId) => {
     const segment = getSegment(segmentId)
     return generateSegmentThumbnail(segment)
+  })
+
+  ipcMain.handle('set-processing-state', (_event, options) => {
+    return queueMetadataWrite(() => updateProcessingState(options))
   })
 
   ipcMain.handle('merge-segment', async (_event, segmentId, name) => {

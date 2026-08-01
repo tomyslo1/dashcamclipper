@@ -1,6 +1,7 @@
 const crypto = require('node:crypto')
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { readProcessingMetadata } = require('./processing-metadata')
 
 const VIDEO_EXTENSIONS = new Set(['.avi', '.mp4', '.mov', '.mkv'])
 const SEGMENT_GAP_MS = 3 * 60 * 1000
@@ -101,9 +102,12 @@ function pairCameraFiles(frontFiles, rearFiles) {
     }
 
     clips.push({
+      key: front.relativeKey,
       recordedAt: front.recordedAt,
       front,
       rear: rear || null,
+      processed: false,
+      processedAt: null,
       size: front.size + (rear?.size || 0)
     })
   }
@@ -163,7 +167,7 @@ function createSegment(clips) {
   const lastClip = clips[clips.length - 1]
   const fingerprint = clips.map((clip) => clip.front.path).join('\n')
 
-  return {
+  const segment = {
     id: crypto.createHash('sha1').update(fingerprint).digest('hex').slice(0, 16),
     start: firstClip.recordedAt,
     end: lastClip.recordedAt,
@@ -173,6 +177,28 @@ function createSegment(clips) {
     totalSize: clips.reduce((total, clip) => total + clip.size, 0),
     clips
   }
+
+  refreshSegmentProcessing(segment)
+  return segment
+}
+
+function refreshSegmentProcessing(segment) {
+  segment.processedCount = segment.clips.filter((clip) => clip.processed).length
+  segment.processed = segment.clips.length > 0 && segment.processedCount === segment.clips.length
+  return segment
+}
+
+function applyProcessingMetadata(segments, metadata) {
+  for (const segment of segments) {
+    for (const clip of segment.clips) {
+      clip.processedAt = metadata.processedClips[clip.key] || null
+      clip.processed = Boolean(clip.processedAt)
+    }
+
+    refreshSegmentProcessing(segment)
+  }
+
+  return segments
 }
 
 function groupSegments(clips, maximumGapMs = SEGMENT_GAP_MS) {
@@ -200,13 +226,15 @@ function groupSegments(clips, maximumGapMs = SEGMENT_GAP_MS) {
 
 async function scanSource(rootPath, filters = {}) {
   const { frontPath, rearPath } = await findCameraFolders(rootPath)
-  const [frontFiles, rearFiles] = await Promise.all([
+  const [frontFiles, rearFiles, metadata] = await Promise.all([
     readVideoFiles(frontPath),
-    readVideoFiles(rearPath)
+    readVideoFiles(rearPath),
+    readProcessingMetadata(rootPath)
   ])
   const pairing = pairCameraFiles(frontFiles, rearFiles)
   const filteredClips = filterClips(pairing.clips, filters)
   const segments = groupSegments(filteredClips)
+  applyProcessingMetadata(segments, metadata)
 
   return {
     rootPath,
@@ -217,6 +245,7 @@ async function scanSource(rootPath, filters = {}) {
       front: frontFiles.length,
       rear: rearFiles.length,
       visible: filteredClips.length,
+      processedVisible: filteredClips.filter((clip) => clip.processed).length,
       unpairedRear: pairing.unpairedRearCount
     }
   }
@@ -230,18 +259,30 @@ function toPublicSegment(segment) {
     durationMs: segment.durationMs,
     clipCount: segment.clipCount,
     pairedCount: segment.pairedCount,
-    totalSize: segment.totalSize
+    totalSize: segment.totalSize,
+    processedCount: segment.processedCount,
+    processed: segment.processed,
+    clips: segment.clips.map((clip) => ({
+      key: clip.key,
+      recordedAt: clip.recordedAt.toISOString(),
+      fileName: clip.front.name,
+      hasRear: Boolean(clip.rear),
+      processed: clip.processed,
+      processedAt: clip.processedAt
+    }))
   }
 }
 
 module.exports = {
   SEGMENT_GAP_MS,
   filterClips,
+  applyProcessingMetadata,
   findCameraFolders,
   groupSegments,
   pairCameraFiles,
   parseLocalDate,
   readVideoFiles,
+  refreshSegmentProcessing,
   scanSource,
   toPublicSegment
 }

@@ -11,7 +11,9 @@ Choose a folder with this structure:
 ```text
 Selected folder/
 ├── DCIMA/    front camera recordings
-└── DCIMB/    rear camera recordings
+├── DCIMB/    rear camera recordings
+└── dashcamclipper/
+    └── metadata.json    processing state created by the app
 ```
 
 Subfolders inside `DCIMA` and `DCIMB` are scanned too. AVI, MP4, MOV, and MKV files are supported.
@@ -65,8 +67,10 @@ corepack pnpm start
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips.
    - **Delete** asks twice, then moves both camera files to the Recycle Bin or Trash.
-5. Name a merged clip and set its start and end in the built-in trimming screen.
-6. Save it to the archive.
+5. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
+6. Switch between **All**, **Unprocessed**, and **Processed** above the segment list.
+7. Name a merged clip and set its start and end in the built-in trimming screen.
+8. Save it to the archive.
 
 Finished clips use this filename:
 
@@ -80,6 +84,12 @@ They are written to:
 - macOS: `/Volumes/cloud/Videos/Dashcam/Processed`
 
 The app reports an error if the archive drive is not connected. It does not silently save to another location.
+
+## Processing metadata
+
+Dashcam Clipper creates `dashcamclipper/metadata.json` in the selected source folder. Processed clips are identified by their relative path inside `DCIMA`, so the state continues to work if the microSD card or local folder receives a different drive letter or mount point.
+
+Marking a segment processes every visible clip in that segment. A segment counts as processed only when all of its clips are processed; otherwise it remains under **Unprocessed** and shows the partial count. The metadata file is written separately from the recordings and the video files are not modified.
 
 ## External tools
 

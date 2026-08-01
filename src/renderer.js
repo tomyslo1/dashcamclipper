@@ -5,6 +5,8 @@ const state = {
   scanVersion: 0,
   trim: null,
   tools: null,
+  processingView: 'all',
+  expandedSegments: new Set(),
   toastTimer: null
 }
 
@@ -20,6 +22,7 @@ const loadingState = document.querySelector('#loading-state')
 const resultsHeading = document.querySelector('#results-heading')
 const resultsSummary = document.querySelector('#results-summary')
 const segmentsList = document.querySelector('#segments-list')
+const processingTabs = document.querySelector('#processing-tabs')
 const nameDialog = document.querySelector('#name-dialog')
 const nameForm = document.querySelector('#name-form')
 const clipName = document.querySelector('#clip-name')
@@ -210,6 +213,57 @@ function createThumbnail(segment) {
   return thumbnail
 }
 
+function createProcessingState(segment) {
+  const status = document.createElement('span')
+  status.className = 'processing-state'
+
+  if (segment.processed) {
+    status.classList.add('processed')
+    status.textContent = 'Processed'
+  } else if (segment.processedCount > 0) {
+    status.classList.add('partial')
+    status.textContent = `${segment.processedCount} of ${segment.clipCount} processed`
+  } else {
+    status.textContent = 'Unprocessed'
+  }
+
+  return status
+}
+
+function createClipList(segment) {
+  const list = document.createElement('div')
+  list.className = 'clip-list'
+
+  if (!state.expandedSegments.has(segment.id)) {
+    list.classList.add('hidden')
+  }
+
+  for (const clip of segment.clips) {
+    const row = document.createElement('div')
+    row.className = 'clip-row'
+    const time = document.createElement('span')
+    time.className = 'clip-time'
+    time.textContent = formatClock(clip.recordedAt)
+    const name = document.createElement('span')
+    name.className = 'clip-name'
+    name.textContent = clip.fileName
+    name.title = clip.fileName
+    const cameras = document.createElement('span')
+    cameras.className = 'clip-cameras'
+    cameras.textContent = clip.hasRear ? 'Front + rear' : 'Front only'
+    const processingButton = makeButton(
+      clip.processed ? 'Processed ✓' : 'Mark processed',
+      `mini-button clip-process-button${clip.processed ? ' active' : ''}`,
+      () => setProcessingState(segment, 'clip', !clip.processed, clip.key, processingButton)
+    )
+    processingButton.title = clip.processed ? 'Click to mark this clip unprocessed' : 'Mark this clip processed'
+    row.append(time, name, cameras, processingButton)
+    list.append(row)
+  }
+
+  return list
+}
+
 function renderSegment(segment) {
   const card = document.createElement('article')
   card.className = 'segment-card'
@@ -229,7 +283,7 @@ function renderSegment(segment) {
   details.className = 'segment-details'
   const primaryDetails = document.createElement('p')
   primaryDetails.textContent = `${formatDuration(segment.durationMs)} · ${segment.clipCount} clips · ${formatBytes(segment.totalSize)}`
-  details.append(primaryDetails)
+  details.append(createProcessingState(segment), primaryDetails)
 
   if (segment.pairedCount === segment.clipCount) {
     const cameraDetails = document.createElement('p')
@@ -248,15 +302,36 @@ function renderSegment(segment) {
   const mergeButton = makeButton('Merge & trim', 'primary-button', () => beginMerge(segment))
   mergeButton.disabled = segment.pairedCount !== segment.clipCount
   mergeButton.title = mergeButton.disabled ? 'A rear recording is missing for one or more front clips.' : ''
+  const clipsButton = makeButton(
+    state.expandedSegments.has(segment.id) ? 'Hide clips' : 'Show clips',
+    'text-button',
+    () => {
+      if (state.expandedSegments.has(segment.id)) {
+        state.expandedSegments.delete(segment.id)
+        clipList.classList.add('hidden')
+        clipsButton.textContent = 'Show clips'
+      } else {
+        state.expandedSegments.add(segment.id)
+        clipList.classList.remove('hidden')
+        clipsButton.textContent = 'Hide clips'
+      }
+    }
+  )
+  const processingButton = makeButton(
+    segment.processed ? 'Mark unprocessed' : 'Mark processed',
+    `secondary-button processing-action${segment.processed ? ' active' : ''}`,
+    () => setProcessingState(segment, 'segment', !segment.processed, null, processingButton)
+  )
   const deleteButton = makeButton('Delete', 'text-button danger-text', () => deleteSegment(segment))
-  actions.append(playButton, mergeButton, deleteButton)
+  const clipList = createClipList(segment)
+  actions.append(playButton, mergeButton, clipsButton, processingButton, deleteButton)
 
-  card.append(thumbnail, timeBlock, details, actions)
+  card.append(thumbnail, timeBlock, details, actions, clipList)
   return card
 }
 
-async function loadThumbnails(version) {
-  const segments = [...state.segments]
+async function loadThumbnails(version, visibleSegments = state.segments) {
+  const segments = [...visibleSegments]
   let nextIndex = 0
 
   const loadNext = async () => {
@@ -297,34 +372,73 @@ async function loadThumbnails(version) {
   await Promise.all(Array.from({ length: workerCount }, loadNext))
 }
 
+function getVisibleSegments() {
+  if (state.processingView === 'processed') {
+    return state.segments.filter((segment) => segment.processed)
+  }
+
+  if (state.processingView === 'unprocessed') {
+    return state.segments.filter((segment) => !segment.processed)
+  }
+
+  return state.segments
+}
+
+function updateProcessingTabs() {
+  const processedCount = state.segments.filter((segment) => segment.processed).length
+  const unprocessedCount = state.segments.length - processedCount
+  document.querySelector('#all-count').textContent = String(state.segments.length)
+  document.querySelector('#unprocessed-count').textContent = String(unprocessedCount)
+  document.querySelector('#processed-count').textContent = String(processedCount)
+
+  for (const tab of document.querySelectorAll('.processing-tab')) {
+    const active = tab.dataset.processingView === state.processingView
+    tab.classList.toggle('active', active)
+    tab.setAttribute('aria-selected', String(active))
+  }
+}
+
 function renderResults() {
   segmentsList.replaceChildren()
   loadingState.classList.add('hidden')
 
   if (!state.rootPath) {
     resultsHeading.classList.add('hidden')
+    processingTabs.classList.add('hidden')
     emptyState.classList.remove('hidden')
     return
   }
 
   resultsHeading.classList.remove('hidden')
+  processingTabs.classList.remove('hidden')
+  updateProcessingTabs()
+  const visibleSegments = getVisibleSegments()
 
   if (state.segments.length === 0) {
     emptyState.querySelector('h2').textContent = 'No clips in this range'
     emptyState.querySelector('p').textContent = 'Try an earlier starting date, remove the ending date, or show all clips.'
     emptyState.classList.remove('hidden')
+  } else if (visibleSegments.length === 0) {
+    emptyState.querySelector('h2').textContent = state.processingView === 'processed'
+      ? 'No processed segments'
+      : 'Everything here is processed'
+    emptyState.querySelector('p').textContent = state.processingView === 'processed'
+      ? 'Mark a segment or individual clip as processed and it will appear here.'
+      : 'Switch to Processed or All to review these driving segments.'
+    emptyState.classList.remove('hidden')
   } else {
     emptyState.classList.add('hidden')
-    for (const segment of state.segments) {
+    for (const segment of visibleSegments) {
       segmentsList.append(renderSegment(segment))
     }
 
-    loadThumbnails(state.scanVersion)
+    loadThumbnails(state.scanVersion, visibleSegments)
   }
 
-  const totals = state.totals
+  const totals = state.totals || { visible: 0, front: 0, rear: 0 }
   const segmentWord = state.segments.length === 1 ? 'segment' : 'segments'
-  resultsSummary.textContent = `${totals.visible} of ${totals.front} front clips · ${totals.rear} rear clips · ${state.segments.length} ${segmentWord}`
+  const processedSegments = state.segments.filter((segment) => segment.processed).length
+  resultsSummary.textContent = `${totals.visible} of ${totals.front} front clips · ${totals.rear} rear clips · ${state.segments.length} ${segmentWord} · ${processedSegments} processed`
 }
 
 function setLoading() {
@@ -376,6 +490,11 @@ async function chooseSource() {
 
     if (!selectedPath) {
       return
+    }
+
+    if (selectedPath !== state.rootPath) {
+      state.expandedSegments.clear()
+      state.processingView = 'all'
     }
 
     state.rootPath = selectedPath
@@ -583,6 +702,7 @@ async function deleteSegment(segment) {
     const response = await window.dashcam.deleteSegment(segment.id)
 
     if (response.deleted && response.result) {
+      state.expandedSegments.delete(segment.id)
       state.segments = response.result.segments
       state.totals = response.result.totals
       renderResults()
@@ -590,6 +710,37 @@ async function deleteSegment(segment) {
     }
   } catch (error) {
     await scan(false)
+    showError(error)
+  }
+}
+
+async function setProcessingState(segment, scope, processed, clipKey, button) {
+  button.disabled = true
+  const previousLabel = button.textContent
+  button.textContent = 'Saving…'
+
+  try {
+    const updatedSegment = await window.dashcam.setProcessingState({
+      segmentId: segment.id,
+      scope,
+      clipKey,
+      processed
+    })
+    const index = state.segments.findIndex((item) => item.id === updatedSegment.id)
+
+    if (index !== -1) {
+      state.segments[index] = updatedSegment
+    }
+
+    if (state.totals) {
+      state.totals.processedVisible = state.segments.reduce((total, item) => total + item.processedCount, 0)
+    }
+
+    renderResults()
+    showToast(processed ? 'Processing state saved.' : 'Marked as unprocessed.')
+  } catch (error) {
+    button.disabled = false
+    button.textContent = previousLabel
     showError(error)
   }
 }
@@ -652,6 +803,12 @@ async function clearExternalTool(tool) {
 
 browseButton.addEventListener('click', chooseSource)
 scanButton.addEventListener('click', () => scan())
+for (const tab of document.querySelectorAll('.processing-tab')) {
+  tab.addEventListener('click', () => {
+    state.processingView = tab.dataset.processingView
+    renderResults()
+  })
+}
 toolsButton.addEventListener('click', async () => {
   await refreshToolSettings()
   toolsDialog.showModal()
