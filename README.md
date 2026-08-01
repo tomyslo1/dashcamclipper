@@ -89,7 +89,7 @@ corepack pnpm start
 4. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
 5. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
 6. The segment list opens on **Unprocessed**. Switch to **All** or **Processed** when needed.
-7. Open **Saved videos** to view finished MP4 files from the Processed folder. This page is read-only and can only open videos in VLC.
+7. Open **Saved videos** to browse finished MP4 files from the Processed folder by name, recording date, and thumbnail. This page is read-only and can only open videos in VLC.
 8. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging.
@@ -185,6 +185,6 @@ This creates DMG and ZIP packages for Apple Silicon and Intel Macs in `dist`.
 The `Build installers` GitHub Actions workflow can be started manually to download test artifacts. Pushing a version tag builds Windows and macOS packages and attaches all of them to a GitHub Release:
 
 ```powershell
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.1
+git push origin v0.2.1
 ```

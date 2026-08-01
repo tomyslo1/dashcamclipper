@@ -13,6 +13,7 @@ const {
   formatFilenameDate,
   listProcessedVideos,
   parseProgressLine,
+  parseProcessedVideoFilename,
   processedVideoPath,
   rankProcessedClipNames,
   selectEncoder,
@@ -128,6 +129,23 @@ test('finds and ranks reusable names in processed MP4 filenames', () => {
   assert.deepEqual(rankProcessedClipNames(filenames), ['Mercator', 'Home', 'Work'])
 })
 
+test('reads display details from a processed video filename', () => {
+  assert.deepEqual(
+    parseProcessedVideoFilename('2026-08-01_08-48 Mercator (388 - 398).mp4'),
+    {
+      title: 'Mercator',
+      recordedAt: {
+        year: 2026,
+        month: 8,
+        day: 1,
+        hours: 8,
+        minutes: 48
+      }
+    }
+  )
+  assert.equal(parseProcessedVideoFilename('2026-02-31_08-48 Invalid.mp4'), null)
+})
+
 test('lists saved MP4 videos in reverse filename order', async () => {
   const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'dashcam-processed-'))
 
@@ -141,7 +159,14 @@ test('lists saved MP4 videos in reverse filename order', async () => {
       '2026-07-30_15-10 Shop (94 - 106).mp4',
       '2026-07-29_12-00 Home (40 - 45).mp4'
     ])
-    assert.equal(videos[0].size, 5)
+    assert.equal(videos[0].title, 'Shop')
+    assert.deepEqual(videos[0].recordedAt, {
+      year: 2026,
+      month: 7,
+      day: 30,
+      hours: 15,
+      minutes: 10
+    })
     assert.ok(videos[0].modifiedAt)
   } finally {
     await fs.rm(folder, { recursive: true, force: true })

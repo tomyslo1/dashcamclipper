@@ -27,6 +27,7 @@ const {
   discardTemporaryVideo,
   findFfmpeg,
   findVlc,
+  generateProcessedVideoThumbnail,
   generateSegmentThumbnail,
   getProcessedNameSuggestions,
   listProcessedVideos,
@@ -601,6 +602,8 @@ function registerHandlers() {
   ipcMain.handle('get-name-suggestions', () => getProcessedNameSuggestions())
 
   ipcMain.handle('list-processed-videos', () => listProcessedVideos())
+
+  ipcMain.handle('get-processed-video-thumbnail', (_event, fileName) => generateProcessedVideoThumbnail(fileName))
 
   ipcMain.handle('play-processed-video', (_event, fileName) => playProcessedVideo(fileName))
 

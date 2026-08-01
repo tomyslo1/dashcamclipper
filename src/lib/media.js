@@ -200,6 +200,61 @@ async function generateSegmentThumbnail(segment) {
   }
 }
 
+async function generateProcessedVideoThumbnail(fileName) {
+  const ffmpeg = findFfmpeg()
+
+  if (!ffmpeg) {
+    return null
+  }
+
+  const filePath = processedVideoPath(fileName)
+  const stats = await fs.stat(filePath)
+  const cacheKey = crypto
+    .createHash('sha1')
+    .update(`${filePath}:${stats.size}:${stats.mtimeMs}`)
+    .digest('hex')
+  const tempFolder = await getTempFolder()
+  const outputPath = path.join(tempFolder, `thumbnail-saved-${cacheKey}.jpg`)
+  const existingImage = await fs.readFile(outputPath).catch(() => null)
+
+  if (existingImage?.length > 0) {
+    return `data:image/jpeg;base64,${existingImage.toString('base64')}`
+  }
+
+  try {
+    const args = buildThumbnailArguments(filePath, outputPath)
+
+    await new Promise((resolve, reject) => {
+      const child = spawn(ffmpeg, args, { windowsHide: true, stdio: 'ignore' })
+      const timeout = setTimeout(() => {
+        child.kill()
+        reject(new Error('Thumbnail generation timed out.'))
+      }, 15000)
+
+      child.on('error', (error) => {
+        clearTimeout(timeout)
+        reject(error)
+      })
+
+      child.on('close', (code) => {
+        clearTimeout(timeout)
+
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(new Error(`FFmpeg stopped with code ${code}.`))
+        }
+      })
+    })
+
+    const image = await fs.readFile(outputPath)
+    return `data:image/jpeg;base64,${image.toString('base64')}`
+  } catch {
+    await fs.rm(outputPath, { force: true })
+    return null
+  }
+}
+
 async function createVlcPlaylist(clips) {
   const tempFolder = await getTempFolder()
   const playlistPath = path.join(tempFolder, `segment-${crypto.randomUUID()}.m3u8`)
@@ -610,8 +665,38 @@ function buildProcessedFilename(dateValue, name, clipRange) {
 }
 
 function extractProcessedClipName(filename) {
-  const match = filename.match(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\s+(.+?)(?:\s+\(\d+(?:\s+-\s+\d+)?\))?\.mp4$/i)
-  return match ? match[1].trim() : null
+  return parseProcessedVideoFilename(filename)?.title || null
+}
+
+function parseProcessedVideoFilename(filename) {
+  const match = filename.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})\s+(.+?)(?:\s+\(\d+(?:\s+-\s+\d+)?\))?\.mp4$/i)
+
+  if (!match) {
+    return null
+  }
+
+  const recordedAt = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hours: Number(match[4]),
+    minutes: Number(match[5])
+  }
+  const date = new Date(recordedAt.year, recordedAt.month - 1, recordedAt.day, recordedAt.hours, recordedAt.minutes)
+  const isValid = date.getFullYear() === recordedAt.year &&
+    date.getMonth() === recordedAt.month - 1 &&
+    date.getDate() === recordedAt.day &&
+    date.getHours() === recordedAt.hours &&
+    date.getMinutes() === recordedAt.minutes
+
+  if (!isValid) {
+    return null
+  }
+
+  return {
+    title: match[6].trim(),
+    recordedAt
+  }
 }
 
 function rankProcessedClipNames(filenames, limit = 5) {
@@ -680,9 +765,11 @@ async function listProcessedVideos(folderPath = processedFolder()) {
     .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.mp4')
     .map(async (entry) => {
       const stats = await fs.stat(path.join(folderPath, entry.name))
+      const parsedName = parseProcessedVideoFilename(entry.name)
       return {
         name: entry.name,
-        size: stats.size,
+        title: parsedName?.title || path.parse(entry.name).name,
+        recordedAt: parsedName?.recordedAt || null,
         modifiedAt: stats.mtime.toISOString()
       }
     }))
@@ -806,11 +893,13 @@ module.exports = {
   formatClipRange,
   formatFilenameDate,
   generateSegmentThumbnail,
+  generateProcessedVideoThumbnail,
   getProcessedNameSuggestions,
   listProcessedVideos,
   mergeSegment,
   extractProcessedClipName,
   parseProgressLine,
+  parseProcessedVideoFilename,
   playFileInVlc,
   playProcessedVideo,
   playSegmentInVlc,

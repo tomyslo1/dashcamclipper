@@ -144,11 +144,28 @@ function formatBytes(bytes) {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
-function formatSavedVideoDate(dateValue) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(new Date(dateValue))
+function formatSavedVideoDate(video) {
+  let parts = video.recordedAt
+
+  if (!parts) {
+    const modifiedAt = new Date(video.modifiedAt)
+    parts = {
+      year: modifiedAt.getFullYear(),
+      month: modifiedAt.getMonth() + 1,
+      day: modifiedAt.getDate(),
+      hours: modifiedAt.getHours(),
+      minutes: modifiedAt.getMinutes()
+    }
+  }
+
+  const weekdays = ['ned.', 'pon.', 'tor.', 'sre.', 'čet.', 'pet.', 'sob.']
+  const weekday = weekdays[new Date(parts.year, parts.month - 1, parts.day).getDay()]
+
+  return {
+    weekday,
+    date: `${parts.day}. ${parts.month}. ${parts.year}`,
+    time: `${parts.hours}:${String(parts.minutes).padStart(2, '0')}`
+  }
 }
 
 function formatVideoTime(seconds) {
@@ -509,21 +526,40 @@ function getVisibleSegments() {
   return state.segments
 }
 
-function createSavedVideoCard(video) {
+function createSavedVideoThumbnail(index) {
+  const thumbnail = document.createElement('div')
+  thumbnail.className = 'saved-video-thumbnail thumbnail-loading'
+  thumbnail.dataset.savedThumbnail = String(index)
+  const placeholder = document.createElement('span')
+  placeholder.className = 'thumbnail-placeholder'
+  const camera = document.createElement('i')
+  const label = document.createElement('span')
+  label.textContent = 'Loading preview'
+  placeholder.append(camera, label)
+  thumbnail.append(placeholder)
+  return thumbnail
+}
+
+function createSavedVideoCard(video, index) {
   const card = document.createElement('article')
   card.className = 'saved-video-card'
-
-  const icon = document.createElement('span')
-  icon.className = 'saved-video-icon'
-  icon.setAttribute('aria-hidden', 'true')
+  const thumbnail = createSavedVideoThumbnail(index)
 
   const details = document.createElement('div')
   details.className = 'saved-video-details'
   const name = document.createElement('strong')
-  name.textContent = video.name
+  name.textContent = video.title
   name.title = video.name
-  const metadata = document.createElement('span')
-  metadata.textContent = `${formatSavedVideoDate(video.modifiedAt)} · ${formatBytes(video.size)}`
+  const dateDetails = formatSavedVideoDate(video)
+  const metadata = document.createElement('div')
+  metadata.className = 'saved-video-metadata'
+  const weekday = document.createElement('span')
+  weekday.textContent = dateDetails.weekday
+  const date = document.createElement('span')
+  date.textContent = dateDetails.date
+  const time = document.createElement('span')
+  time.textContent = dateDetails.time
+  metadata.append(weekday, date, time)
   details.append(name, metadata)
 
   const playButton = makeButton('Play in VLC', 'secondary-button', async () => {
@@ -540,8 +576,50 @@ function createSavedVideoCard(video) {
     }
   })
 
-  card.append(icon, details, playButton)
+  card.append(thumbnail, details, playButton)
   return card
+}
+
+async function loadSavedVideoThumbnails(request, videos) {
+  let nextIndex = 0
+
+  const loadNext = async () => {
+    while (nextIndex < videos.length) {
+      const index = nextIndex
+      const video = videos[index]
+      nextIndex += 1
+      const thumbnail = document.querySelector(`[data-saved-thumbnail="${index}"]`)
+
+      if (!thumbnail) {
+        continue
+      }
+
+      try {
+        const imageUrl = await window.dashcam.getProcessedVideoThumbnail(video.name)
+
+        if (request !== state.savedVideosRequest || state.processingView !== 'saved' || !thumbnail.isConnected) {
+          continue
+        }
+
+        thumbnail.classList.remove('thumbnail-loading')
+
+        if (imageUrl) {
+          const image = document.createElement('img')
+          image.src = imageUrl
+          image.alt = `Preview of ${video.title}`
+          thumbnail.replaceChildren(image)
+        } else {
+          thumbnail.querySelector('.thumbnail-placeholder span').textContent = 'No preview'
+        }
+      } catch {
+        thumbnail.classList.remove('thumbnail-loading')
+        thumbnail.querySelector('.thumbnail-placeholder span').textContent = 'No preview'
+      }
+    }
+  }
+
+  const workerCount = Math.min(3, videos.length)
+  await Promise.all(Array.from({ length: workerCount }, loadNext))
 }
 
 function renderSavedVideos() {
@@ -580,14 +658,15 @@ function renderSavedVideos() {
   } else {
     emptyState.classList.add('hidden')
 
-    for (const video of state.savedVideos) {
-      savedVideosList.append(createSavedVideoCard(video))
+    for (const [index, video] of state.savedVideos.entries()) {
+      savedVideosList.append(createSavedVideoCard(video, index))
     }
+
+    loadSavedVideoThumbnails(state.savedVideosRequest, state.savedVideos)
   }
 
   const videoWord = state.savedVideos.length === 1 ? 'video' : 'videos'
-  const totalSize = state.savedVideos.reduce((total, video) => total + video.size, 0)
-  resultsSummary.textContent = `${state.savedVideos.length} saved ${videoWord} · ${formatBytes(totalSize)}`
+  resultsSummary.textContent = `${state.savedVideos.length} saved ${videoWord}`
 }
 
 async function loadSavedVideos() {
