@@ -107,16 +107,13 @@ button:disabled {
   place-items: center;
   border-radius: 13px;
   background: var(--accent-soft);
-  color: var(--accent);
+  overflow: hidden;
 }
 
-.brand-mark svg {
-  width: 28px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
+.brand-mark img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
 }
 
 main {

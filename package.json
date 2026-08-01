@@ -4,13 +4,76 @@
   "description": "Browse, combine, trim, and archive front and rear dashcam recordings.",
   "main": "src/main.js",
   "packageManager": "pnpm@11.9.0",
+  "author": "Tomy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tomyslo1/dashcamclipper.git"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "start": "electron .",
     "test": "node --test",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/lib/clips.js && node --check src/lib/media.js && node --check src/lib/tool-settings.js && node --check src/lib/processing-metadata.js && node --check src/lib/library-settings.js && node --check src/lib/import-clips.js"
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/lib/clips.js && node --check src/lib/media.js && node --check src/lib/tool-settings.js && node --check src/lib/processing-metadata.js && node --check src/lib/library-settings.js && node --check src/lib/import-clips.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:mac": "electron-builder --mac dmg zip --x64 --arm64"
   },
   "license": "MIT",
   "devDependencies": {
-    "electron": "^43.2.0"
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "si.tomyslo1.dashcamclipper",
+    "productName": "Dashcam Clipper",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dashcam Clipper"
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.video",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    }
   }
 }

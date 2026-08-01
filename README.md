@@ -1,8 +1,22 @@
-# Dashcam Clipper
+<p align="center">
+  <img src="build/icon.png" width="128" height="128" alt="Dashcam Clipper icon">
+</p>
+
+<h1 align="center">Dashcam Clipper</h1>
+
+<p align="center">Review, combine, trim, and archive front and rear dashcam recordings.</p>
 
 Dashcam Clipper is a small desktop app for reviewing one-minute front and rear dashcam recordings. It finds driving segments, opens them in VLC, combines both camera views, trims the result, and saves the finished clip to a fixed archive folder.
 
-The app runs on Windows and macOS. Installers are not included yet; this repository currently runs from source.
+## Downloads
+
+Ready-to-run builds are available from [GitHub Releases](https://github.com/tomyslo1/dashcamclipper/releases):
+
+- Windows x64 installer: `.exe`
+- macOS Apple Silicon installer: `arm64.dmg`
+- macOS Intel installer: `x64.dmg`
+
+FFmpeg and VLC are separate requirements and are not bundled with the app. The current installers are unsigned, so Windows SmartScreen or macOS Gatekeeper may ask for confirmation. Code signing and Apple notarization can be added later without changing the application package.
 
 ## What it expects
 
@@ -22,10 +36,11 @@ Clip modification times are used as recording times. Consecutive clips belong to
 
 ## Requirements
 
-- Node.js 20 or newer
 - FFmpeg
 - VLC media player
 - A supported NVIDIA, AMD, or Intel GPU is optional on Windows
+
+Running or packaging from source also requires Node.js 22.12 or newer and pnpm 11.9.
 
 On Windows, Dashcam Clipper probes NVIDIA NVENC, AMD AMF, Intel Quick Sync, and Windows Media Foundation HEVC encoders, then falls back to CPU `libx265`. On Apple Silicon and other supported Macs, it prefers VideoToolbox HEVC and falls back to `libx265`. A hardware encoder that passes the initial probe but fails on the real video is retried automatically with CPU HEVC.
 
@@ -131,3 +146,32 @@ corepack pnpm start
 ```
 
 The app uses Electron with plain HTML, CSS, and JavaScript. No frontend build step is required.
+
+### Building installers locally
+
+On Windows:
+
+```powershell
+corepack pnpm install
+corepack pnpm run dist:win
+```
+
+The installer is written to `dist/Dashcam Clipper-0.1.0-win-x64.exe`.
+
+On macOS:
+
+```bash
+corepack pnpm install
+corepack pnpm run dist:mac
+```
+
+This creates DMG and ZIP packages for Apple Silicon and Intel Macs in `dist`.
+
+### Publishing a release
+
+The `Build installers` GitHub Actions workflow can be started manually to download test artifacts. Pushing a version tag builds Windows and macOS packages and attaches all of them to a GitHub Release:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```

@@ -81,6 +81,7 @@ function createWindow() {
     minWidth: 820,
     minHeight: 620,
     title: 'Dashcam Clipper',
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#171916' : '#f4f5ef',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
