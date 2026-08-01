@@ -1,0 +1,8 @@
+node_modules/
+.electron-cache/
+.pnpm-store/
+dist/
+out/
+*.log
+.DS_Store
+Thumbs.db

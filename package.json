@@ -1,0 +1,16 @@
+{
+  "name": "dashcamclipper",
+  "version": "0.1.0",
+  "description": "Browse, combine, trim, and archive front and rear dashcam recordings.",
+  "main": "src/main.js",
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/lib/clips.js && node --check src/lib/media.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^43.2.0"
+  }
+}

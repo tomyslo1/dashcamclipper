@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' file: blob:; connect-src 'none'">
+    <title>Dashcam Clipper</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" role="img">
+            <path d="M5 8.5A2.5 2.5 0 0 1 7.5 6h17A2.5 2.5 0 0 1 27 8.5v15a2.5 2.5 0 0 1-2.5 2.5h-17A2.5 2.5 0 0 1 5 23.5z"></path>
+            <circle cx="16" cy="16" r="5.2"></circle>
+            <path d="M10 10h3"></path>
+          </svg>
+        </div>
+        <div>
+          <h1>Dashcam Clipper</h1>
+          <p>Find a drive, keep the useful part, archive it.</p>
+        </div>
+      </header>
+
+      <main>
+        <section class="panel source-panel" aria-labelledby="source-heading">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Source</span>
+              <h2 id="source-heading">Camera folder</h2>
+            </div>
+            <button id="browse-button" class="primary-button" type="button">Choose folder</button>
+          </div>
+          <div id="source-path" class="source-path empty">Select the folder that contains DCIMA and DCIMB</div>
+        </section>
+
+        <section class="panel filters-panel" aria-labelledby="filter-heading">
+          <div class="section-heading compact-heading">
+            <div>
+              <span class="eyebrow">Clips</span>
+              <h2 id="filter-heading">Date range</h2>
+            </div>
+            <button id="scan-button" class="secondary-button" type="button" disabled>Scan again</button>
+          </div>
+
+          <div class="filter-mode" role="radiogroup" aria-label="Clip date filter">
+            <label class="radio-card">
+              <input type="radio" name="filter-mode" value="all" checked>
+              <span>
+                <strong>Show all clips</strong>
+                <small>Everything available in both camera folders</small>
+              </span>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="filter-mode" value="range">
+              <span>
+                <strong>Start from a date</strong>
+                <small>Ending date and both times are optional</small>
+              </span>
+            </label>
+          </div>
+
+          <div class="date-fields" id="date-fields">
+            <label>
+              <span>Starting date</span>
+              <input id="start-date" type="date" disabled>
+            </label>
+            <label>
+              <span>Starting time <small>optional</small></span>
+              <input id="start-time" type="time" disabled>
+            </label>
+            <label>
+              <span>Ending date <small>optional</small></span>
+              <input id="end-date" type="date" disabled>
+            </label>
+            <label>
+              <span>Ending time <small>optional</small></span>
+              <input id="end-time" type="time" disabled>
+            </label>
+          </div>
+        </section>
+
+        <section class="results-section" aria-live="polite">
+          <div id="results-heading" class="results-heading hidden">
+            <div>
+              <span class="eyebrow">Driving segments</span>
+              <h2 id="results-title">Recorded trips</h2>
+            </div>
+            <p id="results-summary"></p>
+          </div>
+
+          <div id="empty-state" class="empty-state">
+            <div class="empty-icon" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+            <h2>Choose your dashcam folder</h2>
+            <p>Dashcam Clipper will group consecutive one-minute recordings into trips.</p>
+          </div>
+
+          <div id="loading-state" class="loading-state hidden">
+            <div class="spinner"></div>
+            <p>Reading camera clips…</p>
+          </div>
+
+          <div id="segments-list" class="segments-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="name-dialog" class="modal small-modal">
+      <form id="name-form">
+        <div class="modal-heading">
+          <div>
+            <span class="eyebrow">Combine segment</span>
+            <h2>Name this clip</h2>
+          </div>
+          <button class="icon-button" id="name-close" type="button" aria-label="Close">×</button>
+        </div>
+        <p class="modal-copy">The date and starting time will be added automatically.</p>
+        <label class="full-field">
+          <span>Clip name</span>
+          <input id="clip-name" type="text" maxlength="100" placeholder="Drive through the mountains" required autocomplete="off">
+        </label>
+        <div id="filename-preview" class="filename-preview"></div>
+        <div class="modal-actions">
+          <button id="name-cancel" class="text-button" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Combine clips</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="progress-dialog" class="modal progress-modal">
+      <div class="progress-symbol" aria-hidden="true">
+        <span></span>
+      </div>
+      <h2 id="progress-title">Combining clips</h2>
+      <p id="progress-phase">Preparing FFmpeg…</p>
+      <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <span id="progress-bar"></span>
+      </div>
+      <div class="progress-footer">
+        <span id="progress-percent">0%</span>
+        <button id="cancel-job" class="text-button" type="button">Cancel</button>
+      </div>
+    </dialog>
+
+    <dialog id="trim-dialog" class="modal trim-modal">
+      <div class="modal-heading trim-heading">
+        <div>
+          <span class="eyebrow">Final step</span>
+          <h2>Trim <span id="trim-name"></span></h2>
+        </div>
+        <button id="discard-output" class="icon-button" type="button" aria-label="Discard and close">×</button>
+      </div>
+
+      <div class="video-frame">
+        <video id="trim-video" controls preload="metadata"></video>
+        <div id="video-fallback" class="video-fallback hidden">
+          Preview is unavailable for this video codec. Open it in VLC, note the times, and use the controls below.
+        </div>
+      </div>
+
+      <div class="trim-toolbar">
+        <button id="play-selection" class="secondary-button" type="button">Play selection</button>
+        <button id="open-output-vlc" class="text-button" type="button">Open in VLC</button>
+        <span id="current-time">00:00 / 00:00</span>
+      </div>
+
+      <div class="trim-controls">
+        <div class="trim-row">
+          <div class="trim-label">
+            <strong>Start</strong>
+            <input id="start-output" class="trim-time-input" type="text" value="00:00" aria-label="Start time">
+          </div>
+          <input id="start-range" type="range" min="0" max="60" step="0.1" value="0">
+          <button id="set-start" class="mini-button" type="button">Use current</button>
+        </div>
+        <div class="trim-row">
+          <div class="trim-label">
+            <strong>End</strong>
+            <input id="end-output" class="trim-time-input" type="text" value="01:00" aria-label="End time">
+          </div>
+          <input id="end-range" type="range" min="0" max="60" step="0.1" value="60">
+          <button id="set-end" class="mini-button" type="button">Use current</button>
+        </div>
+      </div>
+
+      <p class="trim-note">The cut is saved without another video encode, so it stays fast and keeps the merged quality.</p>
+
+      <div class="modal-actions trim-actions">
+        <button id="discard-output-secondary" class="text-button danger-text" type="button">Discard temporary video</button>
+        <button id="save-output" class="primary-button" type="button">Save trimmed clip</button>
+      </div>
+    </dialog>
+
+    <dialog id="error-dialog" class="modal small-modal error-modal">
+      <div class="error-symbol" aria-hidden="true">!</div>
+      <h2>Dashcam Clipper couldn’t continue</h2>
+      <p id="error-message"></p>
+      <div class="modal-actions">
+        <button id="error-close" class="primary-button" type="button">OK</button>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+    <script src="renderer.js"></script>
+  </body>
+</html>
