@@ -726,6 +726,22 @@ function parseProcessedVideoFilename(filename) {
   }
 }
 
+function dateFromProcessedVideoFilename(filename) {
+  const parsed = parseProcessedVideoFilename(filename)
+
+  if (!parsed) {
+    return null
+  }
+
+  return new Date(
+    parsed.recordedAt.year,
+    parsed.recordedAt.month - 1,
+    parsed.recordedAt.day,
+    parsed.recordedAt.hours,
+    parsed.recordedAt.minutes
+  )
+}
+
 function rankProcessedClipNames(filenames, limit = 5) {
   const names = new Map()
 
@@ -824,6 +840,136 @@ async function ensureProcessedFolder() {
   return destination
 }
 
+function buildTrimArguments(sourcePath, outputPath, start, duration, dateValue) {
+  const creationTime = new Date(dateValue).toISOString()
+
+  return [
+    '-y',
+    '-ss',
+    start.toFixed(3),
+    '-i',
+    sourcePath,
+    '-t',
+    duration.toFixed(3),
+    '-map',
+    '0:v:0',
+    '-map',
+    '0:a?',
+    '-map_metadata',
+    '0',
+    '-c',
+    'copy',
+    '-metadata',
+    `creation_time=${creationTime}`,
+    '-metadata:s:v:0',
+    `creation_time=${creationTime}`,
+    '-avoid_negative_ts',
+    'make_zero',
+    '-movflags',
+    '+faststart',
+    '-progress',
+    'pipe:1',
+    '-nostats',
+    outputPath
+  ]
+}
+
+function buildDateMetadataArguments(sourcePath, outputPath, dateValue) {
+  const creationTime = new Date(dateValue).toISOString()
+
+  return [
+    '-y',
+    '-i',
+    sourcePath,
+    '-map',
+    '0',
+    '-map_metadata',
+    '0',
+    '-c',
+    'copy',
+    '-metadata',
+    `creation_time=${creationTime}`,
+    '-metadata:s:v:0',
+    `creation_time=${creationTime}`,
+    '-movflags',
+    '+faststart',
+    '-progress',
+    'pipe:1',
+    '-nostats',
+    outputPath
+  ]
+}
+
+async function replaceVideoFile(sourcePath, replacementPath) {
+  const backupPath = `${sourcePath}.dashcam-clipper-backup-${crypto.randomUUID()}`
+  await fs.rename(sourcePath, backupPath)
+
+  try {
+    await fs.rename(replacementPath, sourcePath)
+  } catch (error) {
+    try {
+      await fs.rename(backupPath, sourcePath)
+    } catch (restoreError) {
+      throw new Error(`The updated file could not be installed and the original is stored at ${backupPath}. ${restoreError.message}`)
+    }
+
+    throw error
+  }
+
+  await fs.rm(backupPath, { force: true })
+}
+
+async function applyFilenameDateToVideo(filePath, onProgress, onProcess) {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath) || path.extname(filePath).toLowerCase() !== '.mp4') {
+    throw new Error('Choose an MP4 video whose filename starts with YYYY-MM-DD_HH-mm.')
+  }
+
+  const sourcePath = path.resolve(filePath)
+  const filenameDate = dateFromProcessedVideoFilename(path.basename(sourcePath))
+
+  if (!filenameDate) {
+    throw new Error('The filename must match YYYY-MM-DD_HH-mm Name (first - last).mp4.')
+  }
+
+  const stats = await fs.stat(sourcePath)
+
+  if (!stats.isFile()) {
+    throw new Error('Choose a video file.')
+  }
+
+  const ffmpeg = findFfmpeg()
+
+  if (!ffmpeg) {
+    throw new Error('FFmpeg was not found. Install FFmpeg or choose its executable under External tools.')
+  }
+
+  const temporaryPath = path.join(path.dirname(sourcePath), `.dashcam-clipper-date-${crypto.randomUUID()}.mp4`)
+  const args = buildDateMetadataArguments(sourcePath, temporaryPath, filenameDate)
+
+  try {
+    onProgress({ phase: 'Embedding the filename date', percent: 0 })
+    await runFfmpeg(
+      ffmpeg,
+      args,
+      0,
+      (percent) => onProgress({ phase: 'Embedding the filename date', percent }),
+      onProcess
+    )
+    await fs.chmod(temporaryPath, stats.mode).catch(() => {})
+    await fs.utimes(temporaryPath, filenameDate, filenameDate)
+    await replaceVideoFile(sourcePath, temporaryPath)
+
+    return {
+      filePath: sourcePath,
+      fileName: path.basename(sourcePath),
+      recordedAt: filenameDate.toISOString()
+    }
+  } catch (error) {
+    await fs.rm(temporaryPath, { force: true })
+    throw error
+  }
+}
+
 async function saveTrimmedVideo(options, onProgress, onProcess) {
   const destinationFolder = await ensureProcessedFolder()
   const filename = buildProcessedFilename(options.filenameDate, options.name, options.clipRange)
@@ -853,29 +999,8 @@ async function saveTrimmedVideo(options, onProgress, onProcess) {
 
   const temporaryPath = path.join(destinationFolder, `.dashcam-clipper-${crypto.randomUUID()}.mp4`)
   const duration = end - start
-  const args = [
-    '-y',
-    '-ss',
-    start.toFixed(3),
-    '-i',
-    options.sourcePath,
-    '-t',
-    duration.toFixed(3),
-    '-map',
-    '0:v:0',
-    '-map',
-    '0:a?',
-    '-c',
-    'copy',
-    '-avoid_negative_ts',
-    'make_zero',
-    '-movflags',
-    '+faststart',
-    '-progress',
-    'pipe:1',
-    '-nostats',
-    temporaryPath
-  ]
+  const filenameDate = new Date(options.filenameDate)
+  const args = buildTrimArguments(options.sourcePath, temporaryPath, start, duration, filenameDate)
 
   try {
     onProgress({ phase: 'Saving the trimmed clip', percent: 0 })
@@ -886,6 +1011,7 @@ async function saveTrimmedVideo(options, onProgress, onProcess) {
       (percent) => onProgress({ phase: 'Saving the trimmed clip', percent }),
       onProcess
     )
+    await fs.utimes(temporaryPath, filenameDate, filenameDate)
     await fs.rename(temporaryPath, destinationPath)
     await fs.rm(options.sourcePath, { force: true })
     return destinationPath
@@ -909,11 +1035,15 @@ async function discardTemporaryVideo(filePath) {
 
 module.exports = {
   applyFilenameDateOverrides,
+  applyFilenameDateToVideo,
+  buildDateMetadataArguments,
   buildMergeArguments,
   buildProcessedFilename,
   buildFrontAudioPlaylist,
   buildThumbnailArguments,
+  buildTrimArguments,
   cleanupTemporaryFiles,
+  dateFromProcessedVideoFilename,
   discardTemporaryVideo,
   findEncoder,
   findFfmpeg,

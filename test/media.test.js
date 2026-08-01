@@ -7,9 +7,12 @@ const test = require('node:test')
 const {
   applyFilenameDateOverrides,
   buildFrontAudioPlaylist,
+  buildDateMetadataArguments,
   buildMergeArguments,
   buildProcessedFilename,
   buildThumbnailArguments,
+  buildTrimArguments,
+  dateFromProcessedVideoFilename,
   extractProcessedClipName,
   formatFilenameDate,
   listProcessedVideos,
@@ -126,6 +129,35 @@ test('formats the required archive filename timestamp', () => {
     buildProcessedFilename(new Date(2026, 6, 30, 15, 10), 'Mercator', { start: 94, end: 106 }),
     '2026-07-30_15-10 Mercator (94 - 106).mp4'
   )
+})
+
+test('reads a local date and time from a processed filename', () => {
+  const date = dateFromProcessedVideoFilename('2026-08-01_08-48 Mercator (388 - 398).mp4')
+
+  assert.equal(date.getFullYear(), 2026)
+  assert.equal(date.getMonth(), 7)
+  assert.equal(date.getDate(), 1)
+  assert.equal(date.getHours(), 8)
+  assert.equal(date.getMinutes(), 48)
+  assert.equal(dateFromProcessedVideoFilename('Mercator.mp4'), null)
+})
+
+test('embeds the filename date while stream-copying a trimmed video', () => {
+  const date = new Date(2026, 7, 1, 8, 48)
+  const args = buildTrimArguments('merged.mp4', 'saved.mp4', 2.5, 30, date)
+
+  assert.equal(args[args.indexOf('-c') + 1], 'copy')
+  assert.ok(args.includes(`creation_time=${date.toISOString()}`))
+  assert.equal(args[args.indexOf('-map_metadata') + 1], '0')
+})
+
+test('builds a stream-copy command for applying a filename date', () => {
+  const date = new Date(2026, 7, 1, 8, 48)
+  const args = buildDateMetadataArguments('existing.mp4', 'updated.mp4', date)
+
+  assert.equal(args[args.indexOf('-c') + 1], 'copy')
+  assert.equal(args[args.indexOf('-map') + 1], '0')
+  assert.ok(args.includes(`creation_time=${date.toISOString()}`))
 })
 
 test('overrides filename date and time independently', () => {

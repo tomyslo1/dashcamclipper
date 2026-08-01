@@ -425,6 +425,14 @@ input:focus {
   font-size: 12px;
 }
 
+.results-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .results-controls {
   display: flex;
   align-items: center;

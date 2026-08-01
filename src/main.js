@@ -23,6 +23,7 @@ const {
 
 const {
   applyFilenameDateOverrides,
+  applyFilenameDateToVideo,
   cleanupTemporaryFiles,
   discardTemporaryVideo,
   findFfmpeg,
@@ -32,6 +33,7 @@ const {
   getProcessedNameSuggestions,
   listProcessedVideos,
   mergeSegment,
+  parseProcessedVideoFilename,
   playFileInVlc,
   playProcessedVideo,
   playSegmentInVlc,
@@ -606,6 +608,43 @@ function registerHandlers() {
   ipcMain.handle('get-processed-video-thumbnail', (_event, fileName) => generateProcessedVideoThumbnail(fileName))
 
   ipcMain.handle('play-processed-video', (_event, fileName) => playProcessedVideo(fileName))
+
+  ipcMain.handle('choose-title-date-video', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose a video with a date in its filename',
+      properties: ['openFile'],
+      filters: [
+        { name: 'MP4 videos', extensions: ['mp4'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+
+    const filePath = result.filePaths[0]
+    const parsed = parseProcessedVideoFilename(path.basename(filePath))
+
+    if (!parsed) {
+      throw new Error('The filename must match YYYY-MM-DD_HH-mm Name (first - last).mp4.')
+    }
+
+    return {
+      filePath,
+      fileName: path.basename(filePath),
+      title: parsed.title,
+      recordedAt: parsed.recordedAt
+    }
+  })
+
+  ipcMain.handle('apply-title-date-to-video', async (_event, filePath) => {
+    if (activeProcess || importInProgress) {
+      throw new Error('Wait for the current media or import job to finish before updating a video.')
+    }
+
+    return applyFilenameDateToVideo(filePath, sendProgress, setActiveProcess)
+  })
 
   ipcMain.handle('get-update-status', () => updateStatus)
 

@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('dashcam', {
   listProcessedVideos: () => ipcRenderer.invoke('list-processed-videos'),
   getProcessedVideoThumbnail: (fileName) => ipcRenderer.invoke('get-processed-video-thumbnail', fileName),
   playProcessedVideo: (fileName) => ipcRenderer.invoke('play-processed-video', fileName),
+  chooseTitleDateVideo: () => ipcRenderer.invoke('choose-title-date-video'),
+  applyTitleDateToVideo: (filePath) => ipcRenderer.invoke('apply-title-date-to-video', filePath),
   getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
   openUpdateRelease: () => ipcRenderer.invoke('open-update-release'),
   mergeSegments: (segmentIds, options) => ipcRenderer.invoke('merge-segments', segmentIds, options),

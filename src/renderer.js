@@ -79,6 +79,7 @@ const libraryPath = document.querySelector('#library-path')
 const chooseLibraryButton = document.querySelector('#choose-library-button')
 const viewLibraryButton = document.querySelector('#view-library-button')
 const importBanner = document.querySelector('#import-banner')
+const applyTitleDateButton = document.querySelector('#apply-title-date')
 const updateButton = document.querySelector('#update-button')
 const updateLabel = document.querySelector('#update-label')
 
@@ -708,6 +709,44 @@ async function refreshSavedVideosQuietly() {
   updateProcessingTabs()
 }
 
+async function applyDateFromFilename() {
+  applyTitleDateButton.disabled = true
+  applyTitleDateButton.textContent = 'Choose video...'
+
+  try {
+    const selection = await window.dashcam.chooseTitleDateVideo()
+
+    if (!selection) {
+      return
+    }
+
+    const dateDetails = formatSavedVideoDate(selection)
+    const confirmed = window.confirm(
+      `Embed ${dateDetails.date} at ${dateDetails.time} in ${selection.fileName}?\n\nThe video and audio streams will not be re-encoded.`
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    applyTitleDateButton.textContent = 'Applying date...'
+    openProgress('Applying date from filename')
+    const result = await window.dashcam.applyTitleDateToVideo(selection.filePath)
+    closeProgress()
+    showToast(`Embedded ${dateDetails.date} at ${dateDetails.time} in ${result.fileName}.`)
+
+    if (state.processingView === 'saved') {
+      await loadSavedVideos()
+    }
+  } catch (error) {
+    closeProgress()
+    showError(error)
+  } finally {
+    applyTitleDateButton.disabled = false
+    applyTitleDateButton.textContent = 'Apply date from filename'
+  }
+}
+
 function getSelectedSegments() {
   return state.segments.filter((segment) => state.selectedSegmentIds.has(segment.id))
 }
@@ -824,6 +863,7 @@ function renderResults() {
   loadingState.classList.add('hidden')
   resultsControls.classList.remove('hidden')
   updateProcessingTabs()
+  applyTitleDateButton.classList.toggle('hidden', state.processingView !== 'saved')
 
   if (state.processingView === 'saved') {
     renderSavedVideos()
@@ -1453,6 +1493,7 @@ scanButton.addEventListener('click', () => scan())
 chooseLibraryButton.addEventListener('click', chooseServerLibrary)
 viewLibraryButton.addEventListener('click', viewServerLibrary)
 document.querySelector('#import-button').addEventListener('click', importNewClips)
+applyTitleDateButton.addEventListener('click', applyDateFromFilename)
 selectVisibleButton.addEventListener('click', toggleVisibleSelection)
 mergeSelectedButton.addEventListener('click', mergeSelectedSegments)
 processSelectedButton.addEventListener('click', () => setSelectedProcessingState(true))
