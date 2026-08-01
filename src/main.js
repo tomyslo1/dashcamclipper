@@ -631,7 +631,7 @@ function registerHandlers() {
     const firstConfirmation = await dialog.showMessageBox(mainWindow, {
       type: 'warning',
       title: 'Delete driving segment?',
-      message: `Delete the clips from ${start} – ${end}?`,
+      message: `Delete the clips from ${start} - ${end}?`,
       detail: `${segment.clipCount} front clips and ${segment.pairedCount} rear clips will be removed from the source.`,
       buttons: ['Continue', 'Cancel'],
       defaultId: 1,

@@ -377,7 +377,7 @@ function renderSegment(segment) {
   date.textContent = formatDate(segment.start)
   const hours = document.createElement('span')
   hours.className = 'segment-hours'
-  hours.textContent = `${formatClock(segment.start)} – ${formatClock(segment.end)}`
+  hours.textContent = `${formatClock(segment.start)} - ${formatClock(segment.end)}`
   timeBlock.append(date, hours)
 
   const details = document.createElement('div')
