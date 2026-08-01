@@ -177,3 +177,7 @@ The `Build installers` GitHub Actions workflow can be started manually to downlo
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+## Acknowledgements
+
+Made with help from OpenAI's GPT-5.6 Sol model at extra-high reasoning effort.
