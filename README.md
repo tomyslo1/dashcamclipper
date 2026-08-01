@@ -6,7 +6,13 @@
 
 <p align="center">Review, combine, trim, and archive front and rear dashcam recordings.</p>
 
-<p align="center"><em>Tested and used with a Junsun F7R701 dashcam and a Junsun V1 Plus MT8768 Android head unit purchased from AliExpress.</em></p>
+-----
+
+*Tested and used with a Junsun F7R701 dashcam and a Junsun V1 Plus MT8768 Android head unit purchased from AliExpress.*
+
+Made as a personal tool to make dashcam footage ingestion easier.
+
+Made with help from OpenAI's GPT-5.6 Sol model at extra-high reasoning effort.
 
 Dashcam Clipper is a small desktop app for reviewing one-minute front and rear dashcam recordings. It finds driving segments, opens them in VLC, combines both camera views, trims the result, and saves the finished clip to a fixed archive folder.
 
@@ -177,7 +183,3 @@ The `Build installers` GitHub Actions workflow can be started manually to downlo
 git tag v0.1.0
 git push origin v0.1.0
 ```
-
-## Acknowledgements
-
-Made with help from OpenAI's GPT-5.6 Sol model at extra-high reasoning effort.
