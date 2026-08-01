@@ -167,15 +167,34 @@ function filterClips(clips, filters = {}) {
   })
 }
 
+function parseClipNumber(filename) {
+  const match = path.basename(filename, path.extname(filename)).match(/(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
+function createClipRange(clips) {
+  const start = parseClipNumber(clips[0]?.front.name || '')
+  const end = parseClipNumber(clips[clips.length - 1]?.front.name || '')
+
+  if (start === null || end === null) {
+    return null
+  }
+
+  return { start, end }
+}
+
 function createSegment(clips) {
   const firstClip = clips[0]
   const lastClip = clips[clips.length - 1]
+  const filenameClip = clips[Math.min(1, clips.length - 1)]
   const fingerprint = clips.map((clip) => clip.front.path).join('\n')
 
   const segment = {
     id: crypto.createHash('sha1').update(fingerprint).digest('hex').slice(0, 16),
     start: firstClip.recordedAt,
     end: lastClip.recordedAt,
+    filenameDate: filenameClip.recordedAt,
+    clipRange: createClipRange(clips),
     durationMs: Math.max(60 * 1000, lastClip.recordedAt - firstClip.recordedAt + 60 * 1000),
     clipCount: clips.length,
     pairedCount: clips.filter((clip) => clip.rear).length,
@@ -335,6 +354,8 @@ function toPublicSegment(segment) {
     id: segment.id,
     start: segment.start.toISOString(),
     end: segment.end.toISOString(),
+    filenameDate: segment.filenameDate.toISOString(),
+    clipRange: segment.clipRange,
     durationMs: segment.durationMs,
     clipCount: segment.clipCount,
     pairedCount: segment.pairedCount,
@@ -358,11 +379,13 @@ function toPublicSegment(segment) {
 
 module.exports = {
   SEGMENT_GAP_MS,
+  createClipRange,
   filterClips,
   applyProcessingMetadata,
   findCameraFolders,
   groupSegments,
   pairCameraFiles,
+  parseClipNumber,
   parseLocalDate,
   readVideoFiles,
   refreshSegmentProcessing,

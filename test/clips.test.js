@@ -5,9 +5,11 @@ const test = require('node:test')
 
 const {
   SEGMENT_GAP_MS,
+  createClipRange,
   filterClips,
   groupSegments,
   pairCameraFiles,
+  parseClipNumber,
   scanSource,
   toPublicSegment
 } = require('../src/lib/clips')
@@ -60,6 +62,17 @@ test('starts a new segment after a gap longer than three minutes', () => {
   assert.equal(segments[0].clipCount, 2)
   assert.equal(segments[1].clipCount, 2)
   assert.equal(segments[2].clipCount, 1)
+  assert.equal(segments[0].filenameDate.getTime(), clips[1].recordedAt.getTime())
+})
+
+test('reads the first and last numeric clip suffix for saved filenames', () => {
+  const clips = [
+    { front: { name: 'MOVI0094.avi' } },
+    { front: { name: 'MOVI0106.avi' } }
+  ]
+
+  assert.equal(parseClipNumber('MOVI0094.avi'), 94)
+  assert.deepEqual(createClipRange(clips), { start: 94, end: 106 })
 })
 
 test('filters inclusively from the selected local date and time', () => {
@@ -110,6 +123,7 @@ test('scans matching camera folders and returns public trip data', async (contex
   assert.equal(result.segments[0].processed, false)
   assert.equal(publicSegment.clips[0].processed, true)
   assert.equal(publicSegment.clips[1].processed, false)
+  assert.equal(publicSegment.filenameDate, result.segments[0].clips[1].recordedAt.toISOString())
   assert.equal(result.totals.front, 2)
   assert.equal(result.totals.rear, 2)
 })

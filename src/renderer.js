@@ -29,7 +29,10 @@ const processingTabs = document.querySelector('#processing-tabs')
 const nameDialog = document.querySelector('#name-dialog')
 const nameForm = document.querySelector('#name-form')
 const clipName = document.querySelector('#clip-name')
+const nameSuggestionsWrap = document.querySelector('#name-suggestions-wrap')
+const nameSuggestions = document.querySelector('#name-suggestions')
 const filenamePreview = document.querySelector('#filename-preview')
+const mirrorRear = document.querySelector('#mirror-rear')
 const progressDialog = document.querySelector('#progress-dialog')
 const progressTitle = document.querySelector('#progress-title')
 const progressPhase = document.querySelector('#progress-phase')
@@ -173,6 +176,18 @@ function cleanPreviewName(name) {
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
     .replace(/\s+/g, ' ')
     .replace(/[. ]+$/g, '')
+}
+
+function formatClipRange(clipRange) {
+  if (!clipRange) {
+    return ''
+  }
+
+  if (clipRange.start === clipRange.end) {
+    return ` (${clipRange.start})`
+  }
+
+  return ` (${clipRange.start} - ${clipRange.end})`
 }
 
 function readableError(error) {
@@ -579,15 +594,35 @@ async function playSegment(segment) {
   }
 }
 
-function askForName(segment) {
+async function askForName(segment) {
+  const suggestions = await window.dashcam.getNameSuggestions().catch(() => [])
+
   return new Promise((resolve) => {
-    const prefix = formatFilenamePrefix(segment.start)
+    const prefix = formatFilenamePrefix(segment.filenameDate || segment.start)
+    const range = formatClipRange(segment.clipRange)
     clipName.value = ''
-    filenamePreview.textContent = `${prefix} ….mp4`
+    mirrorRear.checked = true
+    filenamePreview.textContent = `${prefix} …${range}.mp4`
+    nameSuggestions.replaceChildren()
+
+    for (const suggestion of suggestions) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'suggestion-pill'
+      button.textContent = suggestion
+      button.addEventListener('click', () => {
+        clipName.value = suggestion
+        updatePreview()
+        clipName.focus()
+      })
+      nameSuggestions.append(button)
+    }
+
+    nameSuggestionsWrap.classList.toggle('hidden', suggestions.length === 0)
 
     const updatePreview = () => {
       const name = cleanPreviewName(clipName.value)
-      filenamePreview.textContent = `${prefix}${name ? ` ${name}` : ' …'}.mp4`
+      filenamePreview.textContent = `${prefix}${name ? ` ${name}` : ' …'}${range}.mp4`
     }
 
     const finish = (value) => {
@@ -604,7 +639,7 @@ function askForName(segment) {
       event.preventDefault()
       const name = clipName.value.trim()
       if (name) {
-        finish(name)
+        finish({ name, mirrorRear: mirrorRear.checked })
       }
     }
 
@@ -645,16 +680,16 @@ function closeProgress() {
 }
 
 async function beginMerge(segment) {
-  const name = await askForName(segment)
+  const options = await askForName(segment)
 
-  if (!name) {
+  if (!options) {
     return
   }
 
   openProgress('Combining front and rear clips')
 
   try {
-    const output = await window.dashcam.mergeSegment(segment.id, name)
+    const output = await window.dashcam.mergeSegment(segment.id, options)
     closeProgress()
     openTrim(output, segment.durationMs / 1000)
   } catch (error) {

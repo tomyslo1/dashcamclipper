@@ -302,15 +302,29 @@ function canEncode(ffmpeg, encoder) {
   return !result.error && result.status === 0
 }
 
-function buildMergeArguments(clips, outputPath, encoderArgs) {
+function buildMergeArguments(clips, outputPath, encoderArgs, options = {}) {
   const inputArgs = []
   const stackedVideos = []
   const concatInputs = []
+  const mirrorRear = options.mirrorRear !== false
 
   clips.forEach((clip, index) => {
+    const frontInput = index * 2
+    const rearInput = frontInput + 1
     inputArgs.push('-i', clip.front.path, '-i', clip.rear.path)
-    stackedVideos.push(`[${index * 2}:v][${index * 2 + 1}:v]vstack=inputs=2[v${index}]`)
-    concatInputs.push(`[v${index}][${index * 2}:a]`)
+
+    if (mirrorRear) {
+      stackedVideos.push(
+        `[${rearInput}:v]split=2[rearBase${index}][rearFlip${index}]`,
+        `[rearFlip${index}]crop=iw:ih-50:0:0,hflip[rearMain${index}]`,
+        `[rearBase${index}][rearMain${index}]overlay=0:0[rear${index}]`,
+        `[${frontInput}:v][rear${index}]vstack=inputs=2[v${index}]`
+      )
+    } else {
+      stackedVideos.push(`[${frontInput}:v][${rearInput}:v]vstack=inputs=2[v${index}]`)
+    }
+
+    concatInputs.push(`[v${index}][${frontInput}:a]`)
   })
 
   const filter = `${stackedVideos.join(';')};${concatInputs.join('')}concat=n=${clips.length}:v=1:a=1[outv][outa]`
@@ -401,7 +415,7 @@ function runFfmpeg(ffmpeg, args, expectedDurationSeconds, onProgress, onProcess)
   })
 }
 
-async function mergeSegment(clips, onProgress, onProcess) {
+async function mergeSegment(clips, options, onProgress, onProcess) {
   if (clips.length === 0) {
     throw new Error('This segment has no clips to merge.')
   }
@@ -419,7 +433,7 @@ async function mergeSegment(clips, onProgress, onProcess) {
   const tempFolder = await getTempFolder()
   const outputPath = path.join(tempFolder, `merged-${crypto.randomUUID()}.mp4`)
   const encoder = findEncoder(ffmpeg)
-  const args = buildMergeArguments(clips, outputPath, encoder.args)
+  const args = buildMergeArguments(clips, outputPath, encoder.args, options)
 
   onProgress({ phase: `Combining with ${encoder.name}`, percent: 0 })
   await runFfmpeg(
@@ -460,6 +474,66 @@ function processedFolder() {
   return 'Y:\\Videos\\Dashcam\\Processed'
 }
 
+function formatClipRange(clipRange) {
+  if (!clipRange || !Number.isInteger(clipRange.start) || !Number.isInteger(clipRange.end)) {
+    return ''
+  }
+
+  if (clipRange.start === clipRange.end) {
+    return ` (${clipRange.start})`
+  }
+
+  return ` (${clipRange.start} - ${clipRange.end})`
+}
+
+function buildProcessedFilename(dateValue, name, clipRange) {
+  const cleanName = sanitizeClipName(name)
+
+  if (!cleanName) {
+    throw new Error('Enter a name for the clip.')
+  }
+
+  return `${formatFilenameDate(dateValue)} ${cleanName}${formatClipRange(clipRange)}.mp4`
+}
+
+function extractProcessedClipName(filename) {
+  const match = filename.match(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\s+(.+?)(?:\s+\(\d+(?:\s+-\s+\d+)?\))?\.mp4$/i)
+  return match ? match[1].trim() : null
+}
+
+function rankProcessedClipNames(filenames, limit = 5) {
+  const names = new Map()
+
+  for (const filename of filenames) {
+    const name = extractProcessedClipName(filename)
+
+    if (!name) {
+      continue
+    }
+
+    const key = name.toLocaleLowerCase()
+    const existing = names.get(key)
+    names.set(key, existing ? { name: existing.name, count: existing.count + 1 } : { name, count: 1 })
+  }
+
+  return [...names.values()]
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+    .slice(0, limit)
+    .map((entry) => entry.name)
+}
+
+async function getProcessedNameSuggestions() {
+  try {
+    const entries = await fs.readdir(processedFolder(), { withFileTypes: true })
+    const filenames = entries
+      .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.mp4')
+      .map((entry) => entry.name)
+    return rankProcessedClipNames(filenames)
+  } catch {
+    return []
+  }
+}
+
 async function ensureProcessedFolder() {
   const destination = processedFolder()
   const root = process.platform === 'darwin' ? '/Volumes/cloud' : path.parse(destination).root
@@ -475,14 +549,8 @@ async function ensureProcessedFolder() {
 }
 
 async function saveTrimmedVideo(options, onProgress, onProcess) {
-  const cleanName = sanitizeClipName(options.name)
-
-  if (!cleanName) {
-    throw new Error('Enter a name for the clip.')
-  }
-
   const destinationFolder = await ensureProcessedFolder()
-  const filename = `${formatFilenameDate(options.segmentStart)} ${cleanName}.mp4`
+  const filename = buildProcessedFilename(options.filenameDate, options.name, options.clipRange)
   const destinationPath = path.join(destinationFolder, filename)
 
   try {
@@ -565,19 +633,24 @@ async function discardTemporaryVideo(filePath) {
 
 module.exports = {
   buildMergeArguments,
+  buildProcessedFilename,
   buildThumbnailArguments,
   cleanupTemporaryFiles,
   discardTemporaryVideo,
   findEncoder,
   findFfmpeg,
   findVlc,
+  formatClipRange,
   formatFilenameDate,
   generateSegmentThumbnail,
+  getProcessedNameSuggestions,
   mergeSegment,
+  extractProcessedClipName,
   parseProgressLine,
   playFileInVlc,
   playSegmentInVlc,
   processedFolder,
+  rankProcessedClipNames,
   sanitizeClipName,
   saveTrimmedVideo,
   setToolOverrides,

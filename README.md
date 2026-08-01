@@ -67,18 +67,20 @@ corepack pnpm start
 5. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
 6. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
-   - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips.
+   - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging.
    - **Delete** asks twice, then moves both camera files to the Recycle Bin or Trash.
 7. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
 8. Switch between **All**, **Unprocessed**, and **Processed** above the segment list.
-9. Name a merged clip and set its start and end in the built-in trimming screen.
+9. Name a merged clip and set its start and end in the built-in trimming screen. The naming dialog offers up to five frequently used names from existing processed MP4 files.
 10. Save it to the archive.
 
 Finished clips use this filename:
 
 ```text
-YYYY-MM-DD_HH-mm Clip name.mp4
+YYYY-MM-DD_HH-mm Clip name (first - last).mp4
 ```
+
+The timestamp comes from the modification time of the segment's second front-camera clip. The numbers are taken from the numeric suffixes in the first and last source filenames, such as `MOVI0094.avi` through `MOVI0106.avi`. A one-clip segment uses a single number in parentheses.
 
 They are written to:
 

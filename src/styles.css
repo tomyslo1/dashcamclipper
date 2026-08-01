@@ -904,6 +904,74 @@ input:focus {
   font-size: 11px;
 }
 
+.name-suggestions {
+  margin-top: 12px;
+}
+
+.name-suggestions > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.suggestion-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.suggestion-pill {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.suggestion-pill:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.mirror-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 15px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.mirror-option:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: var(--accent-soft);
+}
+
+.mirror-option input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.mirror-option span {
+  display: grid;
+  gap: 2px;
+}
+
+.mirror-option strong {
+  font-size: 12px;
+}
+
+.mirror-option small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
 .modal-actions {
   display: flex;
   align-items: center;

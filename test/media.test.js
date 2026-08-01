@@ -3,13 +3,16 @@ const test = require('node:test')
 
 const {
   buildMergeArguments,
+  buildProcessedFilename,
   buildThumbnailArguments,
+  extractProcessedClipName,
   formatFilenameDate,
   parseProgressLine,
+  rankProcessedClipNames,
   sanitizeClipName
 } = require('../src/lib/media')
 
-test('builds paired vstack and concat filters without shell quoting', () => {
+test('mirrors the rear image above its bottom 50 pixels by default', () => {
   const clips = [
     { front: { path: 'C:\\front\\one.avi' }, rear: { path: 'C:\\rear\\one.avi' } },
     { front: { path: 'C:\\front\\two.avi' }, rear: { path: 'C:\\rear\\two.avi' } }
@@ -17,9 +20,23 @@ test('builds paired vstack and concat filters without shell quoting', () => {
   const args = buildMergeArguments(clips, 'output.mp4', ['-c:v', 'libx265'])
   const filter = args[args.indexOf('-filter_complex') + 1]
 
-  assert.match(filter, /\[0:v\]\[1:v\]vstack=inputs=2\[v0\]/)
+  assert.match(filter, /\[1:v\]split=2\[rearBase0\]\[rearFlip0\]/)
+  assert.match(filter, /\[rearFlip0\]crop=iw:ih-50:0:0,hflip\[rearMain0\]/)
+  assert.match(filter, /\[rearBase0\]\[rearMain0\]overlay=0:0\[rear0\]/)
+  assert.match(filter, /\[0:v\]\[rear0\]vstack=inputs=2\[v0\]/)
   assert.match(filter, /\[v0\]\[0:a\]\[v1\]\[2:a\]concat=n=2:v=1:a=1\[outv\]\[outa\]/)
   assert.ok(args.includes('C:\\front\\one.avi'))
+})
+
+test('can stack the rear image without mirroring it', () => {
+  const clips = [
+    { front: { path: 'front.avi' }, rear: { path: 'rear.avi' } }
+  ]
+  const args = buildMergeArguments(clips, 'output.mp4', [], { mirrorRear: false })
+  const filter = args[args.indexOf('-filter_complex') + 1]
+
+  assert.match(filter, /\[0:v\]\[1:v\]vstack=inputs=2\[v0\]/)
+  assert.doesNotMatch(filter, /hflip/)
 })
 
 test('cleans names that are unsafe on Windows and macOS', () => {
@@ -28,6 +45,24 @@ test('cleans names that are unsafe on Windows and macOS', () => {
 
 test('formats the required archive filename timestamp', () => {
   assert.equal(formatFilenameDate(new Date(2026, 6, 31, 13, 31)), '2026-07-31_13-31')
+  assert.equal(
+    buildProcessedFilename(new Date(2026, 6, 30, 15, 10), 'Mercator', { start: 94, end: 106 }),
+    '2026-07-30_15-10 Mercator (94 - 106).mp4'
+  )
+})
+
+test('finds and ranks reusable names in processed MP4 filenames', () => {
+  const filenames = [
+    '2026-07-30_15-10 Mercator (94 - 106).mp4',
+    '2026-07-29_12-00 Home (40 - 45).mp4',
+    '2026-07-28_09-15 mercator (20 - 24).mp4',
+    '2026-07-27_08-10 Work (12).mp4',
+    'notes.mp4',
+    '2026-07-26_14-00 Ignored (1 - 2).mov'
+  ]
+
+  assert.equal(extractProcessedClipName(filenames[0]), 'Mercator')
+  assert.deepEqual(rankProcessedClipNames(filenames), ['Mercator', 'Home', 'Work'])
 })
 
 test('converts FFmpeg microsecond progress into a percentage', () => {

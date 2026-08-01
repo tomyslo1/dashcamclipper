@@ -204,12 +204,23 @@
           </div>
           <button class="icon-button" id="name-close" type="button" aria-label="Close">×</button>
         </div>
-        <p class="modal-copy">The date and starting time will be added automatically.</p>
+        <p class="modal-copy">The second clip's modified time and the clip-number range will be added automatically.</p>
         <label class="full-field">
           <span>Clip name</span>
           <input id="clip-name" type="text" maxlength="100" placeholder="Drive through the mountains" required autocomplete="off">
         </label>
+        <div id="name-suggestions-wrap" class="name-suggestions hidden">
+          <span>Frequently used</span>
+          <div id="name-suggestions" class="suggestion-pills"></div>
+        </div>
         <div id="filename-preview" class="filename-preview"></div>
+        <label class="mirror-option">
+          <input id="mirror-rear" type="checkbox" checked>
+          <span>
+            <strong>Mirror rear camera</strong>
+            <small>Keeps the bottom 50 px unchanged.</small>
+          </span>
+        </label>
         <div class="modal-actions">
           <button id="name-cancel" class="text-button" type="button">Cancel</button>
           <button class="primary-button" type="submit">Combine clips</button>

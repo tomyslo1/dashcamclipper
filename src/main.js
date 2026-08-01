@@ -24,6 +24,7 @@ const {
   findFfmpeg,
   findVlc,
   generateSegmentThumbnail,
+  getProcessedNameSuggestions,
   mergeSegment,
   playFileInVlc,
   playSegmentInVlc,
@@ -406,13 +407,26 @@ function registerHandlers() {
 
   ipcMain.handle('import-new-clips', () => importNewClips())
 
-  ipcMain.handle('merge-segment', async (_event, segmentId, name) => {
+  ipcMain.handle('get-name-suggestions', () => getProcessedNameSuggestions())
+
+  ipcMain.handle('merge-segment', async (_event, segmentId, options) => {
     if (activeProcess) {
       throw new Error('Another media job is already running.')
     }
 
     const segment = getSegment(segmentId)
-    const outputPath = await mergeSegment(segment.clips, sendProgress, setActiveProcess)
+    const name = typeof options?.name === 'string' ? options.name.trim() : ''
+
+    if (!name) {
+      throw new Error('Enter a name for the clip.')
+    }
+
+    const outputPath = await mergeSegment(
+      segment.clips,
+      { mirrorRear: options.mirrorRear !== false },
+      sendProgress,
+      setActiveProcess
+    )
     const outputId = require('node:crypto').randomUUID()
 
     temporaryOutputs.set(outputId, {
@@ -425,7 +439,8 @@ function registerHandlers() {
       outputId,
       videoUrl: pathToFileURL(outputPath).href,
       name,
-      segmentStart: segment.start.toISOString()
+      filenameDate: segment.filenameDate.toISOString(),
+      clipRange: segment.clipRange
     }
   })
 
@@ -467,7 +482,8 @@ function registerHandlers() {
     const segment = getSegment(output.segmentId)
     const destinationPath = await saveTrimmedVideo({
       sourcePath: output.path,
-      segmentStart: segment.start,
+      filenameDate: segment.filenameDate,
+      clipRange: segment.clipRange,
       name: output.name,
       start: options.start,
       end: options.end
