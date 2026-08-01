@@ -20,6 +20,7 @@ const {
 } = require('./lib/clips')
 
 const {
+  applyFilenameDateOverrides,
   cleanupTemporaryFiles,
   discardTemporaryVideo,
   findFfmpeg,
@@ -330,6 +331,14 @@ async function mergeSelectedSegments(segmentIds, options) {
     throw new Error('Enter a name for the clip.')
   }
 
+  const filenameClip = clips[Math.min(1, clips.length - 1)]
+  const filenameDate = applyFilenameDateOverrides(
+    filenameClip.recordedAt,
+    options.dateOverride,
+    options.timeOverride
+  )
+  const clipRange = createClipRange(clips)
+
   const outputPath = await mergeSegment(
     clips,
     { mirrorRear: options.mirrorRear !== false },
@@ -337,9 +346,6 @@ async function mergeSelectedSegments(segmentIds, options) {
     setActiveProcess
   )
   const outputId = require('node:crypto').randomUUID()
-  const filenameClip = clips[Math.min(1, clips.length - 1)]
-  const filenameDate = filenameClip.recordedAt
-  const clipRange = createClipRange(clips)
 
   temporaryOutputs.set(outputId, {
     path: outputPath,

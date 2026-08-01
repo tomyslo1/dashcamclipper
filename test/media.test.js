@@ -2,6 +2,7 @@ const assert = require('node:assert/strict')
 const test = require('node:test')
 
 const {
+  applyFilenameDateOverrides,
   buildMergeArguments,
   buildProcessedFilename,
   buildThumbnailArguments,
@@ -49,6 +50,24 @@ test('formats the required archive filename timestamp', () => {
     buildProcessedFilename(new Date(2026, 6, 30, 15, 10), 'Mercator', { start: 94, end: 106 }),
     '2026-07-30_15-10 Mercator (94 - 106).mp4'
   )
+})
+
+test('overrides filename date and time independently', () => {
+  const automaticDate = new Date(2026, 6, 30, 15, 10, 42)
+
+  assert.equal(
+    formatFilenameDate(applyFilenameDateOverrides(automaticDate, '2026-08-02', '')),
+    '2026-08-02_15-10'
+  )
+  assert.equal(
+    formatFilenameDate(applyFilenameDateOverrides(automaticDate, '', '09:45')),
+    '2026-07-30_09-45'
+  )
+  assert.equal(
+    formatFilenameDate(applyFilenameDateOverrides(automaticDate, '2026-08-02', '09:45')),
+    '2026-08-02_09-45'
+  )
+  assert.throws(() => applyFilenameDateOverrides(automaticDate, '2026-02-31', ''), /filename date is invalid/i)
 })
 
 test('finds and ranks reusable names in processed MP4 filenames', () => {

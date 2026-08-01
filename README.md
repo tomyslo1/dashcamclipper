@@ -72,7 +72,7 @@ corepack pnpm start
 7. Select multiple segments with their checkboxes to merge them into one video, mark them processed or unprocessed together, or delete them with two confirmations. **Select visible** selects the current tab at once.
 8. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
 9. Switch between **All**, **Unprocessed**, and **Processed** above the segment list.
-10. Name a merged clip and set its start and end in the built-in trimming screen. The naming dialog offers up to five frequently used names from existing processed MP4 files.
+10. Name a merged clip and optionally replace the automatic filename date, time, or both. Leaving either field blank keeps that part from the second clip's modification time. Then set the video's start and end in the built-in trimming screen. The naming dialog offers up to five frequently used names from existing processed MP4 files.
 11. Save it to the archive.
 
 Finished clips use this filename:

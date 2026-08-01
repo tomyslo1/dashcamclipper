@@ -1000,6 +1000,34 @@ input:focus {
   color: var(--accent);
 }
 
+.filename-override-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.filename-override-fields label {
+  display: grid;
+  gap: 6px;
+}
+
+.filename-override-fields label > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.filename-override-fields small {
+  font-weight: 450;
+}
+
+.filename-override-note {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
 .mirror-option {
   display: flex;
   align-items: flex-start;

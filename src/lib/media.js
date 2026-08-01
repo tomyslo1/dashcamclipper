@@ -466,6 +466,45 @@ function formatFilenameDate(dateValue) {
   return `${year}-${month}-${day}_${hours}-${minutes}`
 }
 
+function applyFilenameDateOverrides(dateValue, dateOverride = '', timeOverride = '') {
+  const adjustedDate = new Date(dateValue)
+
+  if (Number.isNaN(adjustedDate.getTime())) {
+    throw new Error('The automatic filename date is invalid.')
+  }
+
+  if (dateOverride) {
+    const dateMatch = dateOverride.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+
+    if (!dateMatch) {
+      throw new Error('The filename date is invalid.')
+    }
+
+    const year = Number(dateMatch[1])
+    const month = Number(dateMatch[2])
+    const day = Number(dateMatch[3])
+    const dateCheck = new Date(year, month - 1, day)
+
+    if (dateCheck.getFullYear() !== year || dateCheck.getMonth() !== month - 1 || dateCheck.getDate() !== day) {
+      throw new Error('The filename date is invalid.')
+    }
+
+    adjustedDate.setFullYear(year, month - 1, day)
+  }
+
+  if (timeOverride) {
+    const timeMatch = timeOverride.match(/^([01]\d|2[0-3]):([0-5]\d)$/)
+
+    if (!timeMatch) {
+      throw new Error('The filename time is invalid.')
+    }
+
+    adjustedDate.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0)
+  }
+
+  return adjustedDate
+}
+
 function processedFolder() {
   if (process.platform === 'darwin') {
     return '/Volumes/cloud/Videos/Dashcam/Processed'
@@ -632,6 +671,7 @@ async function discardTemporaryVideo(filePath) {
 }
 
 module.exports = {
+  applyFilenameDateOverrides,
   buildMergeArguments,
   buildProcessedFilename,
   buildThumbnailArguments,

@@ -45,6 +45,8 @@ const clipName = document.querySelector('#clip-name')
 const nameSuggestionsWrap = document.querySelector('#name-suggestions-wrap')
 const nameSuggestions = document.querySelector('#name-suggestions')
 const filenamePreview = document.querySelector('#filename-preview')
+const filenameDateOverride = document.querySelector('#filename-date-override')
+const filenameTimeOverride = document.querySelector('#filename-time-override')
 const mirrorRear = document.querySelector('#mirror-rear')
 const progressDialog = document.querySelector('#progress-dialog')
 const progressTitle = document.querySelector('#progress-title')
@@ -181,6 +183,22 @@ function formatFilenamePrefix(dateValue) {
   const hours = String(date.getHours()).padStart(2, '0')
   const minutes = String(date.getMinutes()).padStart(2, '0')
   return `${year}-${month}-${day}_${hours}-${minutes}`
+}
+
+function applyFilenameOverridesForPreview(dateValue, dateOverride, timeOverride) {
+  const adjustedDate = new Date(dateValue)
+
+  if (dateOverride) {
+    const [year, month, day] = dateOverride.split('-').map(Number)
+    adjustedDate.setFullYear(year, month - 1, day)
+  }
+
+  if (timeOverride) {
+    const [hours, minutes] = timeOverride.split(':').map(Number)
+    adjustedDate.setHours(hours, minutes, 0, 0)
+  }
+
+  return adjustedDate
 }
 
 function cleanPreviewName(name) {
@@ -700,17 +718,17 @@ async function askForName(selection) {
   const suggestions = await window.dashcam.getNameSuggestions().catch(() => [])
 
   return new Promise((resolve) => {
-    const prefix = formatFilenamePrefix(selection.filenameDate)
     const range = formatClipRange(selection.clipRange)
     const multiple = selection.segmentCount > 1
     nameEyebrow.textContent = multiple ? `Combine ${selection.segmentCount} segments` : 'Combine segment'
     nameHeading.textContent = multiple ? 'Name the combined clip' : 'Name this clip'
     nameCopy.textContent = multiple
-      ? 'The selected segments will be joined in chronological order. The second clip’s modified time and the full clip-number range will be added automatically.'
-      : 'The second clip’s modified time and the clip-number range will be added automatically.'
+      ? 'The selected segments will be joined in chronological order. The second clip’s modified timestamp is used unless you adjust it below.'
+      : 'The second clip’s modified timestamp is used unless you adjust it below.'
     clipName.value = ''
+    filenameDateOverride.value = ''
+    filenameTimeOverride.value = ''
     mirrorRear.checked = true
-    filenamePreview.textContent = `${prefix} …${range}.mp4`
     nameSuggestions.replaceChildren()
 
     for (const suggestion of suggestions) {
@@ -730,14 +748,24 @@ async function askForName(selection) {
 
     const updatePreview = () => {
       const name = cleanPreviewName(clipName.value)
+      const previewDate = applyFilenameOverridesForPreview(
+        selection.filenameDate,
+        filenameDateOverride.value,
+        filenameTimeOverride.value
+      )
+      const prefix = formatFilenamePrefix(previewDate)
       filenamePreview.textContent = `${prefix}${name ? ` ${name}` : ' …'}${range}.mp4`
     }
+
+    updatePreview()
 
     const finish = (value) => {
       nameForm.removeEventListener('submit', submit)
       document.querySelector('#name-cancel').removeEventListener('click', cancel)
       document.querySelector('#name-close').removeEventListener('click', cancel)
       clipName.removeEventListener('input', updatePreview)
+      filenameDateOverride.removeEventListener('input', updatePreview)
+      filenameTimeOverride.removeEventListener('input', updatePreview)
       nameDialog.removeEventListener('cancel', cancelDialog)
       nameDialog.close()
       resolve(value)
@@ -747,7 +775,12 @@ async function askForName(selection) {
       event.preventDefault()
       const name = clipName.value.trim()
       if (name) {
-        finish({ name, mirrorRear: mirrorRear.checked })
+        finish({
+          name,
+          mirrorRear: mirrorRear.checked,
+          dateOverride: filenameDateOverride.value,
+          timeOverride: filenameTimeOverride.value
+        })
       }
     }
 
@@ -761,6 +794,8 @@ async function askForName(selection) {
     document.querySelector('#name-cancel').addEventListener('click', cancel)
     document.querySelector('#name-close').addEventListener('click', cancel)
     clipName.addEventListener('input', updatePreview)
+    filenameDateOverride.addEventListener('input', updatePreview)
+    filenameTimeOverride.addEventListener('input', updatePreview)
     nameDialog.addEventListener('cancel', cancelDialog)
     nameDialog.showModal()
     clipName.focus()
