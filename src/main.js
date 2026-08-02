@@ -33,10 +33,10 @@ const {
   getProcessedNameSuggestions,
   listProcessedVideos,
   mergeSegment,
-  parseProcessedVideoFilename,
   playFileInVlc,
   playProcessedVideo,
   playSegmentInVlc,
+  processedVideoPath,
   saveTrimmedVideo,
   setToolOverrides,
   validateToolExecutable
@@ -72,7 +72,12 @@ let importInProgress = false
 let importCancelled = false
 let toolSettings = {
   ffmpegPath: '',
-  vlcPath: ''
+  vlcPath: '',
+  theme: 'auto',
+  mirrorRear: true,
+  segmentGapMinutes: 3,
+  checkForUpdates: true,
+  thumbnailPreviews: true
 }
 let librarySettings = {
   libraryPath: ''
@@ -105,6 +110,10 @@ async function checkForUpdates() {
       return updateStatus
     }
 
+    if (!toolSettings.checkForUpdates) {
+      return updateStatus
+    }
+
     updateStatus = buildUpdateStatus(currentVersion, await response.json())
     mainWindow?.webContents.send('update-status', updateStatus)
   } catch {
@@ -122,8 +131,6 @@ async function checkForUpdates() {
 }
 
 function createWindow() {
-  nativeTheme.themeSource = 'system'
-
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 760,
@@ -196,6 +203,13 @@ function getToolStatus() {
       available: Boolean(vlcPath),
       path: toolSettings.vlcPath || vlcPath || '',
       selected: Boolean(toolSettings.vlcPath)
+    },
+    preferences: {
+      theme: toolSettings.theme,
+      mirrorRear: toolSettings.mirrorRear,
+      segmentGapMinutes: toolSettings.segmentGapMinutes,
+      checkForUpdates: toolSettings.checkForUpdates,
+      thumbnailPreviews: toolSettings.thumbnailPreviews
     }
   }
 }
@@ -211,6 +225,7 @@ function normalizeToolPath(tool, selectedPath) {
 async function saveCurrentToolSettings() {
   toolSettings = await writeToolSettings(app.getPath('userData'), toolSettings)
   setToolOverrides(toolSettings)
+  nativeTheme.themeSource = toolSettings.theme === 'auto' ? 'system' : toolSettings.theme
 }
 
 async function saveCurrentLibrarySettings() {
@@ -306,7 +321,12 @@ async function updateScan(rootPath, filters) {
     throw new Error('Choose the permanent server library before scanning a source.')
   }
 
-  const result = await scanSource(rootPath, filters, librarySettings.libraryPath)
+  const result = await scanSource(
+    rootPath,
+    filters,
+    librarySettings.libraryPath,
+    toolSettings.segmentGapMinutes * 60 * 1000
+  )
   segmentsById.clear()
 
   for (const segment of result.segments) {
@@ -511,6 +531,33 @@ function registerHandlers() {
 
   ipcMain.handle('get-tool-status', () => getToolStatus())
 
+  ipcMain.handle('save-preferences', async (_event, preferences) => {
+    const checkedForUpdatesBefore = toolSettings.checkForUpdates
+    toolSettings = {
+      ...toolSettings,
+      theme: preferences?.theme,
+      mirrorRear: preferences?.mirrorRear,
+      segmentGapMinutes: preferences?.segmentGapMinutes,
+      checkForUpdates: preferences?.checkForUpdates,
+      thumbnailPreviews: preferences?.thumbnailPreviews
+    }
+    await saveCurrentToolSettings()
+
+    if (!toolSettings.checkForUpdates) {
+      updateStatus = {
+        available: false,
+        currentVersion: app.getVersion(),
+        latestVersion: '',
+        releaseUrl: ''
+      }
+      mainWindow?.webContents.send('update-status', updateStatus)
+    } else if (!checkedForUpdatesBefore) {
+      checkForUpdates()
+    }
+
+    return getToolStatus()
+  })
+
   ipcMain.handle('choose-tool', async (_event, tool) => {
     if (!['ffmpeg', 'vlc'].includes(tool)) {
       throw new Error('Unknown external tool.')
@@ -609,41 +656,41 @@ function registerHandlers() {
 
   ipcMain.handle('play-processed-video', (_event, fileName) => playProcessedVideo(fileName))
 
-  ipcMain.handle('choose-title-date-video', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Choose a video with a date in its filename',
-      properties: ['openFile'],
-      filters: [
-        { name: 'MP4 videos', extensions: ['mp4'] },
-        { name: 'All files', extensions: ['*'] }
-      ]
-    })
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return null
-    }
-
-    const filePath = result.filePaths[0]
-    const parsed = parseProcessedVideoFilename(path.basename(filePath))
-
-    if (!parsed) {
-      throw new Error('The filename must match YYYY-MM-DD_HH-mm Name (first - last).mp4.')
-    }
-
-    return {
-      filePath,
-      fileName: path.basename(filePath),
-      title: parsed.title,
-      recordedAt: parsed.recordedAt
-    }
-  })
-
-  ipcMain.handle('apply-title-date-to-video', async (_event, filePath) => {
+  ipcMain.handle('apply-title-dates-to-videos', async (_event, fileNames) => {
     if (activeProcess || importInProgress) {
       throw new Error('Wait for the current media or import job to finish before updating a video.')
     }
 
-    return applyFilenameDateToVideo(filePath, sendProgress, setActiveProcess)
+    if (!Array.isArray(fileNames) || fileNames.length === 0) {
+      throw new Error('Select at least one saved video.')
+    }
+
+    const selectedNames = [...new Set(fileNames)]
+    const updated = []
+    const failures = []
+
+    for (const [index, fileName] of selectedNames.entries()) {
+      try {
+        const filePath = processedVideoPath(fileName)
+        const result = await applyFilenameDateToVideo(
+          filePath,
+          (progress) => sendProgress({
+            phase: `${index + 1} of ${selectedNames.length}: ${fileName}`,
+            percent: Math.round(((index + (progress.percent || 0) / 100) / selectedNames.length) * 100)
+          }),
+          setActiveProcess
+        )
+        updated.push(result.fileName)
+      } catch (error) {
+        if (/cancelled/i.test(error.message)) {
+          return { updated, failures, cancelled: true }
+        }
+
+        failures.push({ fileName, message: error.message })
+      }
+    }
+
+    return { updated, failures, cancelled: false }
   })
 
   ipcMain.handle('get-update-status', () => updateStatus)
@@ -797,11 +844,15 @@ app.setName('Dashcam Clipper')
 app.whenReady().then(async () => {
   toolSettings = await readToolSettings(app.getPath('userData'))
   librarySettings = await readLibrarySettings(app.getPath('userData'))
+  nativeTheme.themeSource = toolSettings.theme === 'auto' ? 'system' : toolSettings.theme
   setToolOverrides(toolSettings)
   await cleanupTemporaryFiles().catch(() => {})
   registerHandlers()
   createWindow()
-  checkForUpdates()
+
+  if (toolSettings.checkForUpdates) {
+    checkForUpdates()
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

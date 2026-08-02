@@ -13,6 +13,7 @@ const {
   buildThumbnailArguments,
   buildTrimArguments,
   dateFromProcessedVideoFilename,
+  defaultFfmpegCandidates,
   extractProcessedClipName,
   formatFilenameDate,
   listProcessedVideos,
@@ -251,4 +252,12 @@ test('builds a small front-camera thumbnail command', () => {
   assert.deepEqual(args.slice(0, 5), ['-y', '-ss', '0.25', '-i', 'front clip.avi'])
   assert.ok(args.includes('scale=320:-2'))
   assert.equal(args.at(-1), 'preview.jpg')
+})
+
+test('checks common Homebrew FFmpeg locations on macOS', () => {
+  const candidates = defaultFfmpegCandidates('darwin', {})
+
+  assert.ok(candidates.includes('/opt/homebrew/bin/ffmpeg'))
+  assert.ok(candidates.includes('/usr/local/bin/ffmpeg'))
+  assert.ok(candidates.includes('/opt/local/bin/ffmpeg'))
 })

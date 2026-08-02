@@ -35,18 +35,30 @@ function canRun(command, args = ['-version']) {
   }
 }
 
+function defaultFfmpegCandidates(platform = process.platform, environment = process.env) {
+  const candidates = [
+    environment.DASHCAM_CLIPPER_FFMPEG,
+    environment.FFMPEG_PATH,
+    'ffmpeg'
+  ]
+
+  if (platform === 'darwin') {
+    candidates.push(
+      '/opt/homebrew/bin/ffmpeg',
+      '/usr/local/bin/ffmpeg',
+      '/opt/local/bin/ffmpeg'
+    )
+  }
+
+  return candidates
+}
+
 function findFfmpeg() {
   if (toolOverrides.ffmpegPath) {
     return canRun(toolOverrides.ffmpegPath) ? toolOverrides.ffmpegPath : null
   }
 
-  const candidates = [
-    process.env.DASHCAM_CLIPPER_FFMPEG,
-    process.env.FFMPEG_PATH,
-    'ffmpeg'
-  ]
-
-  return candidates.find((candidate) => canRun(candidate)) || null
+  return defaultFfmpegCandidates().find((candidate) => canRun(candidate)) || null
 }
 
 function findVlc() {
@@ -940,7 +952,7 @@ async function applyFilenameDateToVideo(filePath, onProgress, onProcess) {
   const ffmpeg = findFfmpeg()
 
   if (!ffmpeg) {
-    throw new Error('FFmpeg was not found. Install FFmpeg or choose its executable under External tools.')
+    throw new Error('FFmpeg was not found. Install FFmpeg or choose its executable in Settings.')
   }
 
   const temporaryPath = path.join(path.dirname(sourcePath), `.dashcam-clipper-date-${crypto.randomUUID()}.mp4`)
@@ -1044,6 +1056,7 @@ module.exports = {
   buildTrimArguments,
   cleanupTemporaryFiles,
   dateFromProcessedVideoFilename,
+  defaultFfmpegCandidates,
   discardTemporaryVideo,
   findEncoder,
   findFfmpeg,

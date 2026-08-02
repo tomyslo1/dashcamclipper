@@ -3,13 +3,29 @@ const path = require('node:path')
 
 const DEFAULT_TOOL_SETTINGS = {
   ffmpegPath: '',
-  vlcPath: ''
+  vlcPath: '',
+  theme: 'auto',
+  mirrorRear: true,
+  segmentGapMinutes: 3,
+  checkForUpdates: true,
+  thumbnailPreviews: true
 }
 
 function cleanToolSettings(value) {
+  const theme = ['auto', 'light', 'dark'].includes(value?.theme) ? value.theme : 'auto'
+  const requestedGap = Number(value?.segmentGapMinutes)
+  const segmentGapMinutes = Number.isFinite(requestedGap)
+    ? Math.min(60, Math.max(1, Math.round(requestedGap)))
+    : 3
+
   return {
     ffmpegPath: typeof value?.ffmpegPath === 'string' ? value.ffmpegPath : '',
-    vlcPath: typeof value?.vlcPath === 'string' ? value.vlcPath : ''
+    vlcPath: typeof value?.vlcPath === 'string' ? value.vlcPath : '',
+    theme,
+    mirrorRear: typeof value?.mirrorRear === 'boolean' ? value.mirrorRear : true,
+    segmentGapMinutes,
+    checkForUpdates: typeof value?.checkForUpdates === 'boolean' ? value.checkForUpdates : true,
+    thumbnailPreviews: typeof value?.thumbnailPreviews === 'boolean' ? value.thumbnailPreviews : true
   }
 }
 

@@ -13,6 +13,7 @@ const state = {
   savedVideosLoading: false,
   savedVideosError: '',
   savedVideosRequest: 0,
+  selectedSavedVideoNames: new Set(),
   expandedSegments: new Set(),
   selectedSegmentIds: new Set(),
   toastTimer: null
@@ -35,6 +36,10 @@ const savedVideosList = document.querySelector('#saved-videos-list')
 const resultsControls = document.querySelector('#results-controls')
 const processingTabs = document.querySelector('#processing-tabs')
 const selectionToolbar = document.querySelector('#selection-toolbar')
+const savedSelectionToolbar = document.querySelector('#saved-selection-toolbar')
+const savedSelectionCount = document.querySelector('#saved-selection-count')
+const selectSavedVideosButton = document.querySelector('#select-saved-videos')
+const clearSavedSelectionButton = document.querySelector('#clear-saved-selection')
 const selectionCount = document.querySelector('#selection-count')
 const selectVisibleButton = document.querySelector('#select-visible')
 const mergeSelectedButton = document.querySelector('#merge-selected')
@@ -75,6 +80,13 @@ const errorMessage = document.querySelector('#error-message')
 const toast = document.querySelector('#toast')
 const toolsDialog = document.querySelector('#tools-dialog')
 const toolsButton = document.querySelector('#tools-button')
+const themeSetting = document.querySelector('#theme-setting')
+const mirrorRearSetting = document.querySelector('#mirror-rear-setting')
+const segmentGapSetting = document.querySelector('#segment-gap-setting')
+const updateCheckSetting = document.querySelector('#update-check-setting')
+const thumbnailSetting = document.querySelector('#thumbnail-setting')
+const settingsLibraryPath = document.querySelector('#settings-library-path')
+const settingsChooseLibraryButton = document.querySelector('#settings-choose-library')
 const libraryPath = document.querySelector('#library-path')
 const chooseLibraryButton = document.querySelector('#choose-library-button')
 const viewLibraryButton = document.querySelector('#view-library-button')
@@ -85,6 +97,10 @@ const updateLabel = document.querySelector('#update-label')
 
 function getFilterMode() {
   return document.querySelector('input[name="filter-mode"]:checked').value
+}
+
+function thumbnailPreviewsEnabled() {
+  return state.tools?.preferences?.thumbnailPreviews !== false
 }
 
 function getFilters() {
@@ -296,14 +312,15 @@ function makeButton(label, className, action) {
 }
 
 function createThumbnail(segment) {
+  const previewsEnabled = thumbnailPreviewsEnabled()
   const thumbnail = document.createElement('div')
-  thumbnail.className = 'segment-thumbnail thumbnail-loading'
+  thumbnail.className = previewsEnabled ? 'segment-thumbnail thumbnail-loading' : 'segment-thumbnail'
   thumbnail.dataset.thumbnail = segment.id
   const placeholder = document.createElement('span')
   placeholder.className = 'thumbnail-placeholder'
   const camera = document.createElement('i')
   const label = document.createElement('span')
-  label.textContent = 'Loading preview'
+  label.textContent = previewsEnabled ? 'Loading preview' : 'Previews off'
   placeholder.append(camera, label)
   thumbnail.append(placeholder)
   return thumbnail
@@ -528,14 +545,15 @@ function getVisibleSegments() {
 }
 
 function createSavedVideoThumbnail(index) {
+  const previewsEnabled = thumbnailPreviewsEnabled()
   const thumbnail = document.createElement('div')
-  thumbnail.className = 'saved-video-thumbnail thumbnail-loading'
+  thumbnail.className = previewsEnabled ? 'saved-video-thumbnail thumbnail-loading' : 'saved-video-thumbnail'
   thumbnail.dataset.savedThumbnail = String(index)
   const placeholder = document.createElement('span')
   placeholder.className = 'thumbnail-placeholder'
   const camera = document.createElement('i')
   const label = document.createElement('span')
-  label.textContent = 'Loading preview'
+  label.textContent = previewsEnabled ? 'Loading preview' : 'Previews off'
   placeholder.append(camera, label)
   thumbnail.append(placeholder)
   return thumbnail
@@ -544,6 +562,29 @@ function createSavedVideoThumbnail(index) {
 function createSavedVideoCard(video, index) {
   const card = document.createElement('article')
   card.className = 'saved-video-card'
+  card.classList.toggle('selected', state.selectedSavedVideoNames.has(video.name))
+
+  const selector = document.createElement('label')
+  selector.className = 'saved-video-select'
+  selector.title = video.recordedAt
+    ? 'Select this saved video'
+    : 'This filename does not contain a usable date and time'
+  const checkbox = document.createElement('input')
+  checkbox.type = 'checkbox'
+  checkbox.checked = state.selectedSavedVideoNames.has(video.name)
+  checkbox.disabled = !video.recordedAt
+  checkbox.setAttribute('aria-label', `Select ${video.title}`)
+  checkbox.addEventListener('change', () => {
+    if (checkbox.checked) {
+      state.selectedSavedVideoNames.add(video.name)
+    } else {
+      state.selectedSavedVideoNames.delete(video.name)
+    }
+
+    card.classList.toggle('selected', checkbox.checked)
+    renderSavedVideoSelectionControls()
+  })
+  selector.append(checkbox)
   const thumbnail = createSavedVideoThumbnail(index)
 
   const details = document.createElement('div')
@@ -577,8 +618,22 @@ function createSavedVideoCard(video, index) {
     }
   })
 
-  card.append(thumbnail, details, playButton)
+  card.append(selector, thumbnail, details, playButton)
   return card
+}
+
+function renderSavedVideoSelectionControls() {
+  const isSavedView = state.processingView === 'saved'
+  const selectableVideos = state.savedVideos.filter((video) => video.recordedAt)
+  const selectedCount = state.selectedSavedVideoNames.size
+  savedSelectionToolbar.classList.toggle('hidden', !isSavedView || state.savedVideosLoading || state.savedVideos.length === 0)
+  savedSelectionCount.textContent = `${selectedCount} selected`
+  applyTitleDateButton.disabled = selectedCount === 0
+  clearSavedSelectionButton.disabled = selectedCount === 0
+  selectSavedVideosButton.disabled = selectableVideos.length === 0
+  selectSavedVideosButton.textContent = selectedCount === selectableVideos.length && selectableVideos.length > 0
+    ? 'Clear all'
+    : 'Select all'
 }
 
 async function loadSavedVideoThumbnails(request, videos) {
@@ -633,6 +688,7 @@ function renderSavedVideos() {
   resultsHeading.querySelector('.eyebrow').textContent = 'Archive'
   document.querySelector('#results-title').textContent = 'Saved videos'
   savedVideosList.replaceChildren()
+  renderSavedVideoSelectionControls()
 
   if (state.savedVideosLoading) {
     emptyState.classList.add('hidden')
@@ -663,7 +719,9 @@ function renderSavedVideos() {
       savedVideosList.append(createSavedVideoCard(video, index))
     }
 
-    loadSavedVideoThumbnails(state.savedVideosRequest, state.savedVideos)
+    if (thumbnailPreviewsEnabled()) {
+      loadSavedVideoThumbnails(state.savedVideosRequest, state.savedVideos)
+    }
   }
 
   const videoWord = state.savedVideos.length === 1 ? 'video' : 'videos'
@@ -684,6 +742,13 @@ async function loadSavedVideos() {
     }
 
     state.savedVideos = videos
+    const availableNames = new Set(videos.filter((video) => video.recordedAt).map((video) => video.name))
+
+    for (const fileName of state.selectedSavedVideoNames) {
+      if (!availableNames.has(fileName)) {
+        state.selectedSavedVideoNames.delete(fileName)
+      }
+    }
   } catch (error) {
     if (request !== state.savedVideosRequest || state.processingView !== 'saved') {
       return
@@ -710,41 +775,71 @@ async function refreshSavedVideosQuietly() {
 }
 
 async function applyDateFromFilename() {
+  const selectedNames = [...state.selectedSavedVideoNames]
+
+  if (selectedNames.length === 0) {
+    return
+  }
+
+  const videoWord = selectedNames.length === 1 ? 'video' : 'videos'
+  const confirmed = window.confirm(
+    `Apply each filename date and time to ${selectedNames.length} selected ${videoWord}?\n\nVideo and audio streams will not be re-encoded.`
+  )
+
+  if (!confirmed) {
+    return
+  }
+
   applyTitleDateButton.disabled = true
-  applyTitleDateButton.textContent = 'Choose video...'
+  applyTitleDateButton.textContent = 'Applying dates...'
+  openProgress(`Applying dates to ${selectedNames.length} ${videoWord}`)
 
   try {
-    const selection = await window.dashcam.chooseTitleDateVideo()
-
-    if (!selection) {
-      return
-    }
-
-    const dateDetails = formatSavedVideoDate(selection)
-    const confirmed = window.confirm(
-      `Embed ${dateDetails.date} at ${dateDetails.time} in ${selection.fileName}?\n\nThe video and audio streams will not be re-encoded.`
-    )
-
-    if (!confirmed) {
-      return
-    }
-
-    applyTitleDateButton.textContent = 'Applying date...'
-    openProgress('Applying date from filename')
-    const result = await window.dashcam.applyTitleDateToVideo(selection.filePath)
+    const result = await window.dashcam.applyTitleDatesToVideos(selectedNames)
     closeProgress()
-    showToast(`Embedded ${dateDetails.date} at ${dateDetails.time} in ${result.fileName}.`)
+    const updatedNames = new Set(result.updated)
+    state.selectedSavedVideoNames = result.cancelled
+      ? new Set(selectedNames.filter((fileName) => !updatedNames.has(fileName)))
+      : new Set(result.failures.map((failure) => failure.fileName))
 
     if (state.processingView === 'saved') {
       await loadSavedVideos()
+    }
+
+    if (result.failures.length > 0) {
+      const failureText = result.failures
+        .map((failure) => `${failure.fileName}: ${failure.message}`)
+        .join('\n')
+      showError(new Error(`${result.updated.length} updated, ${result.failures.length} failed.\n\n${failureText}`))
+    } else if (result.cancelled) {
+      const updatedWord = result.updated.length === 1 ? 'video' : 'videos'
+      showToast(`Cancelled after updating ${result.updated.length} ${updatedWord}.`)
+    } else {
+      const updatedWord = result.updated.length === 1 ? 'video' : 'videos'
+      showToast(`Applied filename dates to ${result.updated.length} ${updatedWord}.`)
     }
   } catch (error) {
     closeProgress()
     showError(error)
   } finally {
-    applyTitleDateButton.disabled = false
     applyTitleDateButton.textContent = 'Apply date from filename'
+    renderSavedVideoSelectionControls()
   }
+}
+
+function toggleSavedVideoSelection() {
+  const selectableNames = state.savedVideos
+    .filter((video) => video.recordedAt)
+    .map((video) => video.name)
+  const allSelected = selectableNames.length > 0 && selectableNames.every((fileName) => state.selectedSavedVideoNames.has(fileName))
+
+  if (allSelected) {
+    state.selectedSavedVideoNames.clear()
+  } else {
+    state.selectedSavedVideoNames = new Set(selectableNames)
+  }
+
+  renderSavedVideos()
 }
 
 function getSelectedSegments() {
@@ -863,7 +958,7 @@ function renderResults() {
   loadingState.classList.add('hidden')
   resultsControls.classList.remove('hidden')
   updateProcessingTabs()
-  applyTitleDateButton.classList.toggle('hidden', state.processingView !== 'saved')
+  renderSavedVideoSelectionControls()
 
   if (state.processingView === 'saved') {
     renderSavedVideos()
@@ -907,7 +1002,9 @@ function renderResults() {
       segmentsList.append(renderSegment(segment))
     }
 
-    loadThumbnails(state.scanVersion, visibleSegments)
+    if (thumbnailPreviewsEnabled()) {
+      loadThumbnails(state.scanVersion, visibleSegments)
+    }
   }
 
   const totals = state.totals || { visible: 0, front: 0, rear: 0 }
@@ -923,6 +1020,7 @@ function setLoading() {
   resultsHeading.classList.add('hidden')
   resultsControls.classList.add('hidden')
   selectionToolbar.classList.add('hidden')
+  savedSelectionToolbar.classList.add('hidden')
   segmentsList.replaceChildren()
   loadingState.querySelector('p').textContent = 'Reading camera clips...'
   loadingState.classList.remove('hidden')
@@ -1009,7 +1107,7 @@ async function askForName(selection) {
     clipName.value = ''
     filenameDateOverride.value = ''
     filenameTimeOverride.value = ''
-    mirrorRear.checked = true
+    mirrorRear.checked = state.tools?.preferences?.mirrorRear !== false
     nameSuggestions.replaceChildren()
 
     for (const suggestion of suggestions) {
@@ -1353,6 +1451,9 @@ function renderLibraryStatus(status) {
   state.library = status
   chooseLibraryButton.textContent = status.configured ? 'Change library' : 'Choose library'
   viewLibraryButton.disabled = !status.available
+  settingsChooseLibraryButton.textContent = status.configured ? 'Change library' : 'Choose library'
+  settingsLibraryPath.textContent = status.path || 'No library selected'
+  settingsLibraryPath.title = status.path || ''
 
   if (status.path) {
     libraryPath.textContent = status.available ? status.path : `${status.path} (unavailable)`
@@ -1399,7 +1500,7 @@ async function chooseServerLibrary() {
     renderLibraryStatus(status)
 
     if (!status.available) {
-      return
+      return status
     }
 
     if (wasViewingLibrary) {
@@ -1407,8 +1508,11 @@ async function chooseServerLibrary() {
     } else {
       await scan()
     }
+
+    return status
   } catch (error) {
     showError(error)
+    return null
   }
 }
 
@@ -1450,10 +1554,18 @@ function renderToolStatus(tool, status) {
   chooseButton.textContent = status.selected ? 'Change' : 'Choose'
 }
 
-function renderToolSettings(status) {
+function renderToolSettings(status, updatePreferences = true) {
   state.tools = status
   renderToolStatus('ffmpeg', status.ffmpeg)
   renderToolStatus('vlc', status.vlc)
+
+  if (updatePreferences) {
+    themeSetting.value = status.preferences?.theme || 'auto'
+    mirrorRearSetting.checked = status.preferences?.mirrorRear !== false
+    segmentGapSetting.value = String(status.preferences?.segmentGapMinutes || 3)
+    updateCheckSetting.checked = status.preferences?.checkForUpdates !== false
+    thumbnailSetting.checked = status.preferences?.thumbnailPreviews !== false
+  }
 }
 
 async function refreshToolSettings() {
@@ -1466,7 +1578,7 @@ async function refreshToolSettings() {
 
 async function chooseExternalTool(tool) {
   try {
-    renderToolSettings(await window.dashcam.chooseTool(tool))
+    renderToolSettings(await window.dashcam.chooseTool(tool), false)
 
     if (tool === 'ffmpeg' && state.rootPath) {
       renderResults()
@@ -1478,7 +1590,7 @@ async function chooseExternalTool(tool) {
 
 async function clearExternalTool(tool) {
   try {
-    renderToolSettings(await window.dashcam.clearTool(tool))
+    renderToolSettings(await window.dashcam.clearTool(tool), false)
 
     if (tool === 'ffmpeg' && state.rootPath) {
       renderResults()
@@ -1488,12 +1600,49 @@ async function clearExternalTool(tool) {
   }
 }
 
+async function saveSettings() {
+  const previousGap = state.tools?.preferences?.segmentGapMinutes || 3
+  const previousThumbnails = state.tools?.preferences?.thumbnailPreviews !== false
+  const preferences = {
+    theme: themeSetting.value,
+    mirrorRear: mirrorRearSetting.checked,
+    segmentGapMinutes: Number(segmentGapSetting.value),
+    checkForUpdates: updateCheckSetting.checked,
+    thumbnailPreviews: thumbnailSetting.checked
+  }
+
+  document.querySelector('#tools-done').disabled = true
+
+  try {
+    const status = await window.dashcam.savePreferences(preferences)
+    renderToolSettings(status)
+    toolsDialog.close()
+
+    if (state.rootPath && previousGap !== status.preferences.segmentGapMinutes) {
+      await scan()
+    } else if (previousThumbnails !== status.preferences.thumbnailPreviews) {
+      renderResults()
+    }
+
+    showToast('Settings saved.')
+  } catch (error) {
+    showError(error)
+  } finally {
+    document.querySelector('#tools-done').disabled = false
+  }
+}
+
 browseButton.addEventListener('click', chooseSource)
 scanButton.addEventListener('click', () => scan())
 chooseLibraryButton.addEventListener('click', chooseServerLibrary)
 viewLibraryButton.addEventListener('click', viewServerLibrary)
 document.querySelector('#import-button').addEventListener('click', importNewClips)
 applyTitleDateButton.addEventListener('click', applyDateFromFilename)
+selectSavedVideosButton.addEventListener('click', toggleSavedVideoSelection)
+clearSavedSelectionButton.addEventListener('click', () => {
+  state.selectedSavedVideoNames.clear()
+  renderSavedVideos()
+})
 selectVisibleButton.addEventListener('click', toggleVisibleSelection)
 mergeSelectedButton.addEventListener('click', mergeSelectedSegments)
 processSelectedButton.addEventListener('click', () => setSelectedProcessingState(true))
@@ -1526,11 +1675,12 @@ updateButton.addEventListener('click', async () => {
   }
 })
 toolsButton.addEventListener('click', async () => {
-  await refreshToolSettings()
+  await Promise.all([refreshToolSettings(), refreshLibraryStatus()])
   toolsDialog.showModal()
 })
 document.querySelector('#tools-close').addEventListener('click', () => toolsDialog.close())
-document.querySelector('#tools-done').addEventListener('click', () => toolsDialog.close())
+document.querySelector('#tools-done').addEventListener('click', saveSettings)
+settingsChooseLibraryButton.addEventListener('click', chooseServerLibrary)
 document.querySelector('#choose-ffmpeg').addEventListener('click', () => chooseExternalTool('ffmpeg'))
 document.querySelector('#choose-vlc').addEventListener('click', () => chooseExternalTool('vlc'))
 document.querySelector('#clear-ffmpeg').addEventListener('click', () => clearExternalTool('ffmpeg'))

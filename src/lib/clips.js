@@ -365,7 +365,7 @@ function groupSegments(clips, maximumGapMs = SEGMENT_GAP_MS) {
   return groups
 }
 
-async function scanSource(rootPath, filters = {}, libraryRootPath = rootPath) {
+async function scanSource(rootPath, filters = {}, libraryRootPath = rootPath, maximumGapMs = SEGMENT_GAP_MS) {
   const sourceFolders = await findCameraFolders(rootPath)
   const sourceIsLibrary = pathsEqual(rootPath, libraryRootPath)
   const libraryFolders = sourceIsLibrary
@@ -415,7 +415,7 @@ async function scanSource(rootPath, filters = {}, libraryRootPath = rootPath) {
   }
 
   const pairing = pairCameraFiles(frontFiles, rearFiles)
-  reconcileClipTimeline(pairing.clips)
+  reconcileClipTimeline(pairing.clips, maximumGapMs)
 
   for (const clip of pairing.clips) {
     clip.newFront = !sourceIsLibrary && !libraryFrontKeys.has(clip.front.relativeKey)
@@ -424,7 +424,7 @@ async function scanSource(rootPath, filters = {}, libraryRootPath = rootPath) {
   }
 
   const filteredClips = filterClips(pairing.clips, filters)
-  const segments = groupSegments(filteredClips)
+  const segments = groupSegments(filteredClips, maximumGapMs)
   applyProcessingMetadata(segments, metadata)
 
   return {

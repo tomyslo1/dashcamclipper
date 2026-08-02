@@ -22,7 +22,7 @@
             </button>
           </div>
         </div>
-        <button id="tools-button" class="secondary-button header-button" type="button">External tools</button>
+        <button id="tools-button" class="secondary-button header-button" type="button">Settings</button>
       </header>
 
       <main>
@@ -113,10 +113,7 @@
               <span class="eyebrow">Driving segments</span>
               <h2 id="results-title">Recorded trips</h2>
             </div>
-            <div class="results-heading-actions">
-              <p id="results-summary"></p>
-              <button id="apply-title-date" class="secondary-button hidden" type="button">Apply date from filename</button>
-            </div>
+            <p id="results-summary"></p>
           </div>
 
           <div id="results-controls" class="results-controls hidden">
@@ -148,6 +145,15 @@
             </div>
           </div>
 
+          <div id="saved-selection-toolbar" class="selection-toolbar hidden">
+            <strong id="saved-selection-count">0 selected</strong>
+            <div class="selection-actions">
+              <button id="select-saved-videos" class="text-button" type="button">Select all</button>
+              <button id="apply-title-date" class="primary-button" type="button" disabled>Apply date from filename</button>
+              <button id="clear-saved-selection" class="text-button" type="button" disabled>Clear</button>
+            </div>
+          </div>
+
           <div id="empty-state" class="empty-state">
             <div class="empty-icon" aria-hidden="true">
               <span></span><span></span><span></span>
@@ -171,11 +177,58 @@
       <div class="modal-heading">
         <div>
           <span class="eyebrow">Settings</span>
-          <h2>External tools</h2>
+          <h2>Dashcam Clipper settings</h2>
         </div>
         <button id="tools-close" class="icon-button" type="button" aria-label="Close">×</button>
       </div>
-      <p class="modal-copy">Dashcam Clipper searches common locations automatically. Select an executable here if yours is installed somewhere else.</p>
+      <p class="modal-copy">Customize appearance, storage, trip grouping, and external programs.</p>
+
+      <div class="settings-grid">
+        <section class="settings-card">
+          <h3>Appearance</h3>
+          <label class="setting-field">
+            <span>Color mode</span>
+            <select id="theme-setting">
+              <option value="auto">Use system setting</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="settings-card">
+          <h3>Processing defaults</h3>
+          <label class="setting-check">
+            <input id="mirror-rear-setting" type="checkbox" checked>
+            <span>Mirror the rear camera when merging</span>
+          </label>
+          <label class="setting-field compact-field">
+            <span>Start a new segment after</span>
+            <span class="number-setting"><input id="segment-gap-setting" type="number" min="1" max="60" step="1" value="3"> minutes</span>
+          </label>
+        </section>
+
+        <section class="settings-card">
+          <h3>App behavior</h3>
+          <label class="setting-check">
+            <input id="thumbnail-setting" type="checkbox" checked>
+            <span>Generate video thumbnails with FFmpeg</span>
+          </label>
+          <label class="setting-check">
+            <input id="update-check-setting" type="checkbox" checked>
+            <span>Check GitHub for updates at launch</span>
+          </label>
+        </section>
+
+        <section class="settings-card">
+          <h3>Server library</h3>
+          <code id="settings-library-path" class="tool-path">No library selected</code>
+          <button id="settings-choose-library" class="secondary-button settings-path-button" type="button">Choose library</button>
+        </section>
+      </div>
+
+      <h3 class="settings-subheading">External tools</h3>
+      <p class="settings-description">Automatic detection includes common Windows locations and Homebrew paths on macOS.</p>
 
       <div class="tool-list">
         <article class="tool-row">
@@ -211,9 +264,9 @@
         </article>
       </div>
 
-      <p class="tools-note">Segment thumbnails appear when FFmpeg is available. The original camera files are never changed while creating previews.</p>
+      <p class="tools-note">The original camera files are never changed while creating previews.</p>
       <div class="modal-actions">
-        <button id="tools-done" class="primary-button" type="button">Done</button>
+        <button id="tools-done" class="primary-button" type="button">Save settings</button>
       </div>
     </dialog>
 

@@ -40,7 +40,7 @@ Server library/
 
 A microSD card source only needs `DCIMA` and `DCIMB`; Dashcam Clipper never creates its metadata folder on the card. Subfolders inside both camera folders are scanned too. AVI, MP4, MOV, and MKV files are supported.
 
-Clip modification times are used as recording times. Consecutive clips belong to one driving segment until there is a gap longer than three minutes. If one clip has a modification time at least 12 hours too old but breaks an otherwise continuous numbered sequence, the app places it one minute before its successor without changing the file. These inferred times are identified in the expanded clip list. Front and rear clips are paired by relative filename first, then by a recording time within 30 seconds.
+Clip modification times are used as recording times. Consecutive clips belong to one driving segment until there is a gap longer than three minutes by default. The gap can be changed from 1 to 60 minutes in Settings. If one clip has a modification time at least 12 hours too old but breaks an otherwise continuous numbered sequence, the app places it one minute before its successor without changing the file. These inferred times are identified in the expanded clip list. Front and rear clips are paired by relative filename first, then by a recording time within 30 seconds.
 
 ## Requirements
 
@@ -89,7 +89,7 @@ corepack pnpm start
 4. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
 5. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
 6. The segment list opens on **Unprocessed**. Switch to **All** or **Processed** when needed.
-7. Open **Saved videos** to browse finished MP4 files from the Processed folder by name, recording date, and thumbnail. Use **Apply date from filename** to select an existing video and embed its filename timestamp without re-encoding it.
+7. Open **Saved videos** to browse finished MP4 files from the Processed folder by name, recording date, and thumbnail. Select one or several videos with their checkboxes, then use **Apply date from filename** to update them together without re-encoding.
 8. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging. Only front-camera audio is kept, and it is copied without re-encoding. Rear-camera audio is ignored.
@@ -130,15 +130,25 @@ When the browsing source differs from the server library, Dashcam Clipper compar
 
 Imports use exclusive file creation. If a destination file already exists, including one created after the scan, it is skipped and never replaced. Processing metadata remains on the server and is not copied to or created on the card.
 
-## External tools
+## Settings
 
-Open **External tools** in the top-right corner of the app to see whether FFmpeg and VLC were detected. Use **Choose** to select `ffmpeg.exe` or `vlc.exe` when either program is installed in a custom location. Selected paths are saved in the app settings and reused on the next launch.
+Open **Settings** in the top-right corner of the app to customize:
+
+- Automatic, light, or dark appearance
+- Permanent server library path
+- FFmpeg and VLC executable paths
+- Rear-camera mirroring for new merges
+- The driving-segment gap from 1 to 60 minutes
+- Thumbnail generation
+- Automatic update checks
+
+Dashcam Clipper searches for FFmpeg and VLC automatically. On macOS, FFmpeg detection includes Apple Silicon Homebrew at `/opt/homebrew/bin`, Intel Homebrew at `/usr/local/bin`, and MacPorts at `/opt/local/bin`. Use **Choose** if either program is installed somewhere else. Selected paths and other settings are saved and reused on the next launch.
 
 Use **Use automatic** to remove a selected path and return to the built-in search of `PATH` and common installation folders. FFmpeg is used for thumbnails, merging, and trimming. VLC is used for segment playback and merged-video previews.
 
 ## Updates
 
-Dashcam Clipper quietly checks the latest published GitHub Release when it starts. If a newer version is available, an update button appears beside the app title and opens that exact release page. Failed checks stay hidden and do not interrupt normal use.
+Dashcam Clipper quietly checks the latest published GitHub Release when it starts unless update checks are disabled in Settings. If a newer version is available, an update button appears beside the app title and opens that exact release page. Failed checks stay hidden and do not interrupt normal use.
 
 ## Custom tool locations
 
@@ -187,6 +197,6 @@ This creates DMG and ZIP packages for Apple Silicon and Intel Macs in `dist`.
 The `Build installers` GitHub Actions workflow can be started manually to download test artifacts. Pushing a version tag builds Windows and macOS packages and attaches all of them to a GitHub Release:
 
 ```powershell
-git tag v0.2.3
-git push origin v0.2.3
+git tag v0.2.4
+git push origin v0.2.4
 ```

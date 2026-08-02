@@ -16,7 +16,30 @@ test('keeps only supported executable path settings', () => {
     unrelated: true
   }), {
     ffmpegPath: 'C:\\Tools\\ffmpeg.exe',
-    vlcPath: ''
+    vlcPath: '',
+    theme: 'auto',
+    mirrorRear: true,
+    segmentGapMinutes: 3,
+    checkForUpdates: true,
+    thumbnailPreviews: true
+  })
+})
+
+test('cleans appearance and processing preferences', () => {
+  assert.deepEqual(cleanToolSettings({
+    theme: 'dark',
+    mirrorRear: false,
+    segmentGapMinutes: 120,
+    checkForUpdates: false,
+    thumbnailPreviews: false
+  }), {
+    ffmpegPath: '',
+    vlcPath: '',
+    theme: 'dark',
+    mirrorRear: false,
+    segmentGapMinutes: 60,
+    checkForUpdates: false,
+    thumbnailPreviews: false
   })
 })
 
@@ -25,7 +48,12 @@ test('persists and reloads selected external tools', async (context) => {
   context.after(() => fs.rm(userDataPath, { recursive: true, force: true }))
   const expected = {
     ffmpegPath: 'C:\\Tools\\ffmpeg.exe',
-    vlcPath: 'C:\\Tools\\vlc.exe'
+    vlcPath: 'C:\\Tools\\vlc.exe',
+    theme: 'light',
+    mirrorRear: false,
+    segmentGapMinutes: 5,
+    checkForUpdates: false,
+    thumbnailPreviews: true
   }
 
   await writeToolSettings(userDataPath, expected)
@@ -39,6 +67,11 @@ test('uses automatic detection defaults when no settings file exists', async (co
 
   assert.deepEqual(await readToolSettings(userDataPath), {
     ffmpegPath: '',
-    vlcPath: ''
+    vlcPath: '',
+    theme: 'auto',
+    mirrorRear: true,
+    segmentGapMinutes: 3,
+    checkForUpdates: true,
+    thumbnailPreviews: true
   })
 })

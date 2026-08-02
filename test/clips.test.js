@@ -223,6 +223,9 @@ test('scans matching camera folders and returns public trip data', async (contex
   assert.equal(publicSegment.filenameDate, result.segments[0].clips[1].recordedAt.toISOString())
   assert.equal(result.totals.front, 2)
   assert.equal(result.totals.rear, 2)
+
+  const shorterGapResult = await scanSource(rootPath, { mode: 'all' }, rootPath, 30 * 1000)
+  assert.equal(shorterGapResult.segments.length, 2)
 })
 
 test('compares a removable source with server files and server metadata', async (context) => {
