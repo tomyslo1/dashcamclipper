@@ -358,11 +358,11 @@ function selectEncoder(encoders, platform, architecture, canUse) {
         '-c:v',
         'hevc_videotoolbox',
         '-b:v',
-        '3000k',
-        '-maxrate',
         '4500k',
+        '-maxrate',
+        '7000k',
         '-bufsize',
-        '9000k',
+        '14000k',
         '-tag:v',
         'hvc1'
       ]
@@ -719,7 +719,7 @@ function extractProcessedClipName(filename) {
 }
 
 function parseProcessedVideoFilename(filename) {
-  const match = filename.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})\s+(.+?)(?:\s+\(\d+(?:\s+-\s+\d+)?\))?\.mp4$/i)
+  const match = filename.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})\s+(.+?)(?:\s+\((\d+)(?:\s+-\s+(\d+))?\))?\.mp4$/i)
 
   if (!match) {
     return null
@@ -745,7 +745,10 @@ function parseProcessedVideoFilename(filename) {
 
   return {
     title: match[6].trim(),
-    recordedAt
+    recordedAt,
+    clipRange: match[7]
+      ? { start: Number(match[7]), end: Number(match[8] || match[7]) }
+      : null
   }
 }
 
@@ -836,6 +839,7 @@ async function listProcessedVideos(folderPath = processedFolder()) {
         name: entry.name,
         title: parsedName?.title || path.parse(entry.name).name,
         recordedAt: parsedName?.recordedAt || null,
+        clipRange: parsedName?.clipRange || null,
         modifiedAt: stats.mtime.toISOString()
       }
     }))
@@ -997,13 +1001,20 @@ async function saveTrimmedVideo(options, onProgress, onProcess) {
   const destinationFolder = await ensureProcessedFolder()
   const filename = buildProcessedFilename(options.filenameDate, options.name, options.clipRange)
   const destinationPath = path.join(destinationFolder, filename)
+  const replaceExisting = typeof options.replaceFileName === 'string' && options.replaceFileName === filename
 
-  try {
-    await fs.access(destinationPath)
-    throw new Error(`A clip named ${filename} already exists. Rename or move the existing file, then try again.`)
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      throw error
+  if (options.replaceFileName && !replaceExisting) {
+    throw new Error('The rebuilt video filename no longer matches the saved video being replaced.')
+  }
+
+  if (!replaceExisting) {
+    try {
+      await fs.access(destinationPath)
+      throw new Error(`A clip named ${filename} already exists. Rename or move the existing file, then try again.`)
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        throw error
+      }
     }
   }
 
@@ -1035,7 +1046,13 @@ async function saveTrimmedVideo(options, onProgress, onProcess) {
       onProcess
     )
     await fs.utimes(temporaryPath, filenameDate, filenameDate)
-    await fs.rename(temporaryPath, destinationPath)
+
+    if (replaceExisting) {
+      await replaceVideoFile(destinationPath, temporaryPath)
+    } else {
+      await fs.rename(temporaryPath, destinationPath)
+    }
+
     await fs.rm(options.sourcePath, { force: true })
     return destinationPath
   } catch (error) {
@@ -1088,6 +1105,7 @@ module.exports = {
   processedFolder,
   processedVideoPath,
   rankProcessedClipNames,
+  replaceVideoFile,
   selectEncoder,
   sanitizeClipName,
   saveTrimmedVideo,

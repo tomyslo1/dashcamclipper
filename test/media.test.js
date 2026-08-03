@@ -21,6 +21,7 @@ const {
   parseProcessedVideoFilename,
   processedVideoPath,
   rankProcessedClipNames,
+  replaceVideoFile,
   selectEncoder,
   sanitizeClipName
 } = require('../src/lib/media')
@@ -111,8 +112,8 @@ test('prefers VideoToolbox HEVC on Apple Silicon', () => {
 
   assert.equal(encoder.name, 'Apple Silicon VideoToolbox HEVC')
   assert.ok(encoder.args.includes('hevc_videotoolbox'))
-  assert.equal(encoder.args[encoder.args.indexOf('-b:v') + 1], '3000k')
-  assert.equal(encoder.args[encoder.args.indexOf('-maxrate') + 1], '4500k')
+  assert.equal(encoder.args[encoder.args.indexOf('-b:v') + 1], '4500k')
+  assert.equal(encoder.args[encoder.args.indexOf('-maxrate') + 1], '7000k')
   assert.equal(encoder.args.includes('-q:v'), false)
 })
 
@@ -207,7 +208,8 @@ test('reads display details from a processed video filename', () => {
         day: 1,
         hours: 8,
         minutes: 48
-      }
+      },
+      clipRange: { start: 388, end: 398 }
     }
   )
   assert.equal(parseProcessedVideoFilename('2026-02-31_08-48 Invalid.mp4'), null)
@@ -234,6 +236,7 @@ test('lists saved MP4 videos in reverse filename order', async () => {
       hours: 15,
       minutes: 10
     })
+    assert.deepEqual(videos[0].clipRange, { start: 94, end: 106 })
     assert.ok(videos[0].modifiedAt)
   } finally {
     await fs.rm(folder, { recursive: true, force: true })
@@ -243,6 +246,21 @@ test('lists saved MP4 videos in reverse filename order', async () => {
 test('rejects paths outside the saved video folder', () => {
   assert.throws(() => processedVideoPath('../other.mp4'), /saved MP4 video/i)
   assert.throws(() => processedVideoPath('other.mov'), /saved MP4 video/i)
+})
+
+test('installs a completed replacement without leaving the old saved file beside it', async (context) => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'dashcam-replace-'))
+  context.after(() => fs.rm(folder, { recursive: true, force: true }))
+  const savedPath = path.join(folder, 'saved.mp4')
+  const replacementPath = path.join(folder, 'replacement.mp4')
+  await fs.writeFile(savedPath, 'old video')
+  await fs.writeFile(replacementPath, 'new video')
+
+  await replaceVideoFile(savedPath, replacementPath)
+
+  assert.equal(await fs.readFile(savedPath, 'utf8'), 'new video')
+  assert.equal(await fs.access(replacementPath).then(() => true).catch(() => false), false)
+  assert.deepEqual(await fs.readdir(folder), ['saved.mp4'])
 })
 
 test('converts FFmpeg microsecond progress into a percentage', () => {

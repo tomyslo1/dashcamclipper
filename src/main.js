@@ -1,3 +1,4 @@
+const fs = require('node:fs/promises')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 
@@ -15,6 +16,7 @@ const {
 const {
   createClipRange,
   findCameraFolders,
+  findOriginalClips,
   refreshSegmentProcessing,
   scanSource,
   sortClipsByName,
@@ -24,7 +26,9 @@ const {
 const {
   applyFilenameDateOverrides,
   applyFilenameDateToVideo,
+  buildProcessedFilename,
   cleanupTemporaryFiles,
+  dateFromProcessedVideoFilename,
   discardTemporaryVideo,
   findFfmpeg,
   findVlc,
@@ -33,6 +37,7 @@ const {
   getProcessedNameSuggestions,
   listProcessedVideos,
   mergeSegment,
+  parseProcessedVideoFilename,
   playFileInVlc,
   playProcessedVideo,
   playSegmentInVlc,
@@ -462,6 +467,60 @@ async function mergeSelectedSegments(segmentIds, options) {
   }
 }
 
+async function reencodeSavedVideo(fileName) {
+  if (activeProcess || importInProgress) {
+    throw new Error('Wait for the current media or import job to finish before rebuilding a saved video.')
+  }
+
+  if (!librarySettings.libraryPath) {
+    throw new Error('Choose the permanent server library before rebuilding a saved video.')
+  }
+
+  const savedPath = processedVideoPath(fileName)
+  const parsed = parseProcessedVideoFilename(fileName)
+
+  if (!parsed?.clipRange) {
+    throw new Error('The saved filename needs an original clip number or range in parentheses.')
+  }
+
+  const filenameDate = dateFromProcessedVideoFilename(fileName)
+  const normalizedName = buildProcessedFilename(filenameDate, parsed.title, parsed.clipRange)
+
+  if (normalizedName !== fileName) {
+    throw new Error('The saved filename must use the standard Dashcam Clipper format before it can be rebuilt.')
+  }
+
+  await fs.access(savedPath)
+  sendProgress({ phase: 'Finding the original camera clips', percent: 0 })
+  const clips = await findOriginalClips(librarySettings.libraryPath, parsed.clipRange)
+  const outputPath = await mergeSegment(
+    clips,
+    { mirrorRear: toolSettings.mirrorRear !== false },
+    sendProgress,
+    setActiveProcess
+  )
+  const outputId = require('node:crypto').randomUUID()
+
+  temporaryOutputs.set(outputId, {
+    path: outputPath,
+    name: parsed.title,
+    filenameDate,
+    clipRange: parsed.clipRange,
+    clipKeys: [...new Set(clips.map((clip) => clip.key))],
+    replaceFileName: fileName
+  })
+
+  return {
+    outputId,
+    videoUrl: pathToFileURL(outputPath).href,
+    name: parsed.title,
+    filenameDate: filenameDate.toISOString(),
+    clipRange: parsed.clipRange,
+    durationMs: clips.length * 60 * 1000,
+    replacesExisting: true
+  }
+}
+
 async function deleteSelectedSegments(segmentIds) {
   if (activeProcess || importInProgress) {
     throw new Error('Wait for the current media or import job to finish before deleting clips.')
@@ -674,6 +733,8 @@ function registerHandlers() {
 
   ipcMain.handle('play-processed-video', (_event, fileName) => playProcessedVideo(fileName))
 
+  ipcMain.handle('reencode-saved-video', (_event, fileName) => reencodeSavedVideo(fileName))
+
   ipcMain.handle('apply-title-dates-to-videos', async (_event, fileNames) => {
     if (activeProcess || importInProgress) {
       throw new Error('Wait for the current media or import job to finish before updating a video.')
@@ -765,7 +826,8 @@ function registerHandlers() {
       clipRange: output.clipRange,
       name: output.name,
       start: options.start,
-      end: options.end
+      end: options.end,
+      replaceFileName: output.replaceFileName
     }, sendProgress, setActiveProcess)
 
     let processingWarning = ''
@@ -780,7 +842,8 @@ function registerHandlers() {
     return {
       destinationPath,
       segments: [...segmentsById.values()].map(toPublicSegment),
-      processingWarning
+      processingWarning,
+      replacedFileName: output.replaceFileName || ''
     }
   })
 

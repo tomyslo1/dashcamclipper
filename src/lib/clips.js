@@ -63,6 +63,64 @@ async function readVideoFiles(folderPath, basePath = folderPath) {
   return files
 }
 
+async function findOriginalClips(rootPath, clipRange) {
+  const start = Number(clipRange?.start)
+  const end = Number(clipRange?.end)
+
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end - start > 5000) {
+    throw new Error('The saved filename does not contain a usable original clip range.')
+  }
+
+  const cameraFolders = await findCameraFolders(rootPath)
+  const [frontFiles, rearFiles] = await Promise.all([
+    readVideoFiles(cameraFolders.frontPath),
+    readVideoFiles(cameraFolders.rearPath)
+  ])
+  const clips = []
+
+  for (let number = start; number <= end; number += 1) {
+    const frontMatches = frontFiles.filter((file) => parseClipNumber(file.name) === number)
+
+    if (frontMatches.length === 0) {
+      throw new Error(`Original front clip ${number} is missing from DCIMA.`)
+    }
+
+    if (frontMatches.length > 1) {
+      throw new Error(`Original front clip ${number} appears more than once in DCIMA, so it cannot be selected safely.`)
+    }
+
+    const front = frontMatches[0]
+    const matchingRearPath = rearFiles.filter((file) => file.relativeKey === front.relativeKey)
+    const rearMatches = matchingRearPath.length > 0
+      ? matchingRearPath
+      : rearFiles.filter((file) => parseClipNumber(file.name) === number)
+
+    if (rearMatches.length === 0) {
+      throw new Error(`Original rear clip ${number} is missing from DCIMB.`)
+    }
+
+    if (rearMatches.length > 1) {
+      throw new Error(`Original rear clip ${number} appears more than once in DCIMB, so it cannot be selected safely.`)
+    }
+
+    const rear = rearMatches[0]
+    clips.push({
+      key: front.relativeKey,
+      recordedAt: front.recordedAt,
+      front,
+      rear,
+      processed: false,
+      processedAt: null,
+      newFront: false,
+      newRear: false,
+      newToLibrary: false,
+      size: front.size + rear.size
+    })
+  }
+
+  return sortClipsByName(clips)
+}
+
 function pairCameraFiles(frontFiles, rearFiles) {
   const availableRearFiles = new Set(rearFiles.map((file) => file.path))
   const rearByRelativePath = new Map(rearFiles.map((file) => [file.relativeKey, file]))
@@ -485,6 +543,7 @@ module.exports = {
   OUTLIER_DATE_GAP_MS,
   createClipRange,
   compareClipsByName,
+  findOriginalClips,
   filterClips,
   applyProcessingMetadata,
   findCameraFolders,

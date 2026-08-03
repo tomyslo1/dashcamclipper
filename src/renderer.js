@@ -560,6 +560,34 @@ function createSavedVideoThumbnail(index) {
   return thumbnail
 }
 
+async function reencodeSavedVideo(video) {
+  if (!video.clipRange) {
+    return
+  }
+
+  const range = video.clipRange.start === video.clipRange.end
+    ? String(video.clipRange.start)
+    : `${video.clipRange.start} - ${video.clipRange.end}`
+  const confirmed = window.confirm(
+    `Re-encode ${video.title} from original clips ${range}?\n\nThe clips will be rebuilt with the current rear-mirroring setting. You will trim the new version again. The existing saved video will stay unchanged until you save its replacement.`
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  openProgress(`Re-encoding ${video.title}`)
+
+  try {
+    const output = await window.dashcam.reencodeSavedVideo(video.name)
+    closeProgress()
+    openTrim(output, output.durationMs / 1000)
+  } catch (error) {
+    closeProgress()
+    showError(error)
+  }
+}
+
 function createSavedVideoCard(video, index) {
   const card = document.createElement('article')
   card.className = 'saved-video-card'
@@ -619,7 +647,16 @@ function createSavedVideoCard(video, index) {
     }
   })
 
-  card.append(selector, thumbnail, details, playButton)
+  const reencodeButton = makeButton('Re-encode', 'secondary-button', () => reencodeSavedVideo(video))
+  reencodeButton.disabled = !video.clipRange
+  reencodeButton.title = video.clipRange
+    ? 'Rebuild this video from its original front and rear clips'
+    : 'The filename does not contain an original clip range'
+  const actions = document.createElement('div')
+  actions.className = 'saved-video-actions'
+  actions.append(playButton, reencodeButton)
+
+  card.append(selector, thumbnail, details, actions)
   return card
 }
 
@@ -1326,9 +1363,18 @@ async function saveOutput() {
       renderResults()
     }
 
-    const saveMessage = response.processingWarning
-      ? `Saved to ${response.destinationPath}. ${response.processingWarning}`
-      : `Saved to ${response.destinationPath} and marked the source clips processed.`
+    let saveMessage
+
+    if (response.replacedFileName) {
+      saveMessage = `Re-encoded and replaced ${response.replacedFileName}.`
+    } else {
+      saveMessage = `Saved to ${response.destinationPath} and marked the source clips processed.`
+    }
+
+    if (response.processingWarning) {
+      saveMessage = `${saveMessage} ${response.processingWarning}`
+    }
+
     showToast(saveMessage)
   } catch (error) {
     closeProgress()

@@ -1,6 +1,6 @@
 {
   "name": "dashcamclipper",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Browse, combine, trim, and archive front and rear dashcam recordings.",
   "main": "src/main.js",
   "packageManager": "pnpm@11.9.0",

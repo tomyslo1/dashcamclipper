@@ -7,6 +7,7 @@ const {
   SEGMENT_GAP_MS,
   OUTLIER_DATE_GAP_MS,
   createClipRange,
+  findOriginalClips,
   filterClips,
   groupSegments,
   pairCameraFiles,
@@ -83,6 +84,41 @@ test('reads the first and last numeric clip suffix for saved filenames', () => {
 
   assert.equal(parseClipNumber('MOVI0094.avi'), 94)
   assert.deepEqual(createClipRange(clips), { start: 94, end: 106 })
+})
+
+test('finds every original front and rear file in a saved clip range', async (context) => {
+  const rootPath = await fs.mkdtemp(path.join(process.cwd(), '.original-clips-test-'))
+  context.after(() => fs.rm(rootPath, { recursive: true, force: true }))
+  await fs.mkdir(path.join(rootPath, 'DCIMA'), { recursive: true })
+  await fs.mkdir(path.join(rootPath, 'DCIMB'), { recursive: true })
+
+  for (const number of [94, 95, 96]) {
+    const name = `MOVI${String(number).padStart(4, '0')}.avi`
+    await fs.writeFile(path.join(rootPath, 'DCIMA', name), 'front')
+    await fs.writeFile(path.join(rootPath, 'DCIMB', name), 'rear')
+  }
+
+  const clips = await findOriginalClips(rootPath, { start: 94, end: 96 })
+
+  assert.deepEqual(clips.map((clip) => clip.front.name), [
+    'MOVI0094.avi',
+    'MOVI0095.avi',
+    'MOVI0096.avi'
+  ])
+  assert.ok(clips.every((clip) => clip.rear))
+})
+
+test('refuses to rebuild a saved video when an original rear file is missing', async (context) => {
+  const rootPath = await fs.mkdtemp(path.join(process.cwd(), '.original-clips-test-'))
+  context.after(() => fs.rm(rootPath, { recursive: true, force: true }))
+  await fs.mkdir(path.join(rootPath, 'DCIMA'), { recursive: true })
+  await fs.mkdir(path.join(rootPath, 'DCIMB'), { recursive: true })
+  await fs.writeFile(path.join(rootPath, 'DCIMA', 'MOVI0094.avi'), 'front')
+
+  await assert.rejects(
+    () => findOriginalClips(rootPath, { start: 94, end: 94 }),
+    /rear clip 94 is missing/i
+  )
 })
 
 test('sorts segment clips naturally by filename instead of modification order', () => {

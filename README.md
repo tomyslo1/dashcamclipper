@@ -50,7 +50,7 @@ Clip modification times are used as recording times. Consecutive clips belong to
 
 Running or packaging from source also requires Node.js 22.12 or newer and pnpm 11.9.
 
-On Windows, Dashcam Clipper probes NVIDIA NVENC, AMD AMF, Intel Quick Sync, and Windows Media Foundation HEVC encoders, then falls back to CPU `libx265`. On Apple Silicon and other supported Macs, it prefers VideoToolbox HEVC and falls back to `libx265`. VideoToolbox uses a 3 Mbps target with a 4.5 Mbps peak to prevent unexpectedly large macOS exports. A hardware encoder that passes the initial probe but fails on the real video is retried automatically with CPU HEVC.
+On Windows, Dashcam Clipper probes NVIDIA NVENC, AMD AMF, Intel Quick Sync, and Windows Media Foundation HEVC encoders, then falls back to CPU `libx265`. On Apple Silicon and other supported Macs, it prefers VideoToolbox HEVC and falls back to `libx265`. VideoToolbox uses a 4.5 Mbps target with a 7 Mbps peak to keep useful details visible without creating unexpectedly large macOS exports. A hardware encoder that passes the initial probe but fails on the real video is retried automatically with CPU HEVC.
 
 ### Windows setup
 
@@ -89,7 +89,7 @@ corepack pnpm start
 4. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
 5. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
 6. The segment list opens on **Unprocessed**. Switch to **All** or **Processed** when needed.
-7. Open **Saved videos** to browse finished MP4 files from the Processed folder by name, recording date, and thumbnail. Select one or several videos with their checkboxes, then use **Apply date from filename** to update them together without re-encoding.
+7. Open **Saved videos** to browse finished MP4 files from the Processed folder by name, recording date, and thumbnail. Select one or several videos with their checkboxes, then use **Apply date from filename** to update them together without re-encoding. Use **Re-encode** on one saved video to rebuild it from the original clip range when every required front and rear file is still in the server library.
 8. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging. Only front-camera audio is kept, and it is copied without re-encoding. Rear-camera audio is ignored.
@@ -108,6 +108,8 @@ YYYY-MM-DD_HH-mm Clip name (first - last).mp4
 The timestamp comes from the modification time of the segment's second front-camera clip. The numbers are taken from the numeric suffixes in the first and last source filenames, such as `MOVI0094.avi` through `MOVI0106.avi`. A one-clip segment uses a single number in parentheses.
 
 The filename timestamp is also stored as the MP4 creation time, and the saved file's modified time is set to match it. Existing MP4 files using the same filename format can be updated from the Saved videos page. FFmpeg remuxes those files with stream copying, so video and audio are not re-encoded.
+
+Re-encoding a saved video reads the clip range from its filename, finds each matching original in the server `DCIMA` and `DCIMB` folders, and rebuilds them in filename order with the current encoder and rear-mirroring setting. The app refuses if a clip is missing or if duplicate clip numbers make the choice ambiguous. Previous trim positions are not stored, so the trim screen opens again. The existing saved video remains untouched until its replacement is completely written.
 
 They are written to:
 
@@ -198,6 +200,6 @@ This creates DMG and ZIP packages for Apple Silicon and Intel Macs in `dist`.
 The `Build installers` GitHub Actions workflow can be started manually to download test artifacts. Pushing a version tag builds Windows and macOS packages and attaches all of them to a GitHub Release:
 
 ```powershell
-git tag v0.2.5
-git push origin v0.2.5
+git tag v0.2.6
+git push origin v0.2.6
 ```
