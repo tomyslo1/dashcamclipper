@@ -53,6 +53,7 @@ const {
 } = require('./lib/library-settings')
 
 const { copyImportPlan } = require('./lib/import-clips')
+const { ejectSource } = require('./lib/eject-source')
 
 const {
   readProcessingMetadata,
@@ -77,7 +78,8 @@ let toolSettings = {
   mirrorRear: true,
   segmentGapMinutes: 3,
   checkForUpdates: true,
-  thumbnailPreviews: true
+  thumbnailPreviews: true,
+  ejectAfterImport: true
 }
 let librarySettings = {
   libraryPath: ''
@@ -209,7 +211,8 @@ function getToolStatus() {
       mirrorRear: toolSettings.mirrorRear,
       segmentGapMinutes: toolSettings.segmentGapMinutes,
       checkForUpdates: toolSettings.checkForUpdates,
-      thumbnailPreviews: toolSettings.thumbnailPreviews
+      thumbnailPreviews: toolSettings.thumbnailPreviews,
+      ejectAfterImport: toolSettings.ejectAfterImport
     }
   }
 }
@@ -366,16 +369,24 @@ async function importNewClips() {
   }
 
   if (currentImportPlan.length === 0) {
+    const sourcePath = currentRootPath
+    const result = await updateScan(librarySettings.libraryPath, currentFilters)
+    const eject = toolSettings.ejectAfterImport
+      ? await ejectSource(sourcePath, librarySettings.libraryPath)
+      : { requested: false, attempted: false, ejected: false, message: '' }
+
     return {
       copied: 0,
       skipped: 0,
-      result: await updateScan(currentRootPath, currentFilters)
+      result,
+      eject
     }
   }
 
   importInProgress = true
   importCancelled = false
   const plan = [...currentImportPlan]
+  const sourcePath = currentRootPath
 
   try {
     sendProgress({ phase: `Importing 0 of ${plan.length} new files`, percent: 0 })
@@ -388,10 +399,16 @@ async function importNewClips() {
       }),
       () => importCancelled
     )
-    return {
-      ...copyResult,
-      result: await updateScan(currentRootPath, currentFilters)
+    sendProgress({ phase: 'Opening the server library', percent: 100 })
+    const result = await updateScan(librarySettings.libraryPath, currentFilters)
+    let eject = { requested: false, attempted: false, ejected: false, message: '' }
+
+    if (toolSettings.ejectAfterImport) {
+      sendProgress({ phase: 'Ejecting the microSD card', percent: 100 })
+      eject = await ejectSource(sourcePath, librarySettings.libraryPath)
     }
+
+    return { ...copyResult, result, eject }
   } finally {
     importInProgress = false
     importCancelled = false
@@ -539,7 +556,8 @@ function registerHandlers() {
       mirrorRear: preferences?.mirrorRear,
       segmentGapMinutes: preferences?.segmentGapMinutes,
       checkForUpdates: preferences?.checkForUpdates,
-      thumbnailPreviews: preferences?.thumbnailPreviews
+      thumbnailPreviews: preferences?.thumbnailPreviews,
+      ejectAfterImport: preferences?.ejectAfterImport
     }
     await saveCurrentToolSettings()
 

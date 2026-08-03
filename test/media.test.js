@@ -111,6 +111,9 @@ test('prefers VideoToolbox HEVC on Apple Silicon', () => {
 
   assert.equal(encoder.name, 'Apple Silicon VideoToolbox HEVC')
   assert.ok(encoder.args.includes('hevc_videotoolbox'))
+  assert.equal(encoder.args[encoder.args.indexOf('-b:v') + 1], '3000k')
+  assert.equal(encoder.args[encoder.args.indexOf('-maxrate') + 1], '4500k')
+  assert.equal(encoder.args.includes('-q:v'), false)
 })
 
 test('does not silently fall back to H.264 when HEVC is unavailable', () => {

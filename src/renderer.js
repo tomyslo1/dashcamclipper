@@ -85,6 +85,7 @@ const mirrorRearSetting = document.querySelector('#mirror-rear-setting')
 const segmentGapSetting = document.querySelector('#segment-gap-setting')
 const updateCheckSetting = document.querySelector('#update-check-setting')
 const thumbnailSetting = document.querySelector('#thumbnail-setting')
+const ejectAfterImportSetting = document.querySelector('#eject-after-import-setting')
 const settingsLibraryPath = document.querySelector('#settings-library-path')
 const settingsChooseLibraryButton = document.querySelector('#settings-choose-library')
 const libraryPath = document.querySelector('#library-path')
@@ -1528,7 +1529,9 @@ async function importNewClips() {
     closeProgress()
     applyScanResult(response.result)
     renderResults()
-    showToast(`${response.copied} new files imported${response.skipped ? ` · ${response.skipped} already existed` : ''}.`)
+    const importedMessage = `${response.copied} new files imported${response.skipped ? ` - ${response.skipped} already existed` : ''}. Now viewing the server library.`
+    const ejectMessage = response.eject?.requested ? ` ${response.eject.message}` : ''
+    showToast(`${importedMessage}${ejectMessage}`)
   } catch (error) {
     closeProgress()
     await scan(false)
@@ -1565,6 +1568,7 @@ function renderToolSettings(status, updatePreferences = true) {
     segmentGapSetting.value = String(status.preferences?.segmentGapMinutes || 3)
     updateCheckSetting.checked = status.preferences?.checkForUpdates !== false
     thumbnailSetting.checked = status.preferences?.thumbnailPreviews !== false
+    ejectAfterImportSetting.checked = status.preferences?.ejectAfterImport !== false
   }
 }
 
@@ -1608,7 +1612,8 @@ async function saveSettings() {
     mirrorRear: mirrorRearSetting.checked,
     segmentGapMinutes: Number(segmentGapSetting.value),
     checkForUpdates: updateCheckSetting.checked,
-    thumbnailPreviews: thumbnailSetting.checked
+    thumbnailPreviews: thumbnailSetting.checked,
+    ejectAfterImport: ejectAfterImportSetting.checked
   }
 
   document.querySelector('#tools-done').disabled = true

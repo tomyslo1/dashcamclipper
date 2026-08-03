@@ -8,7 +8,8 @@ const DEFAULT_TOOL_SETTINGS = {
   mirrorRear: true,
   segmentGapMinutes: 3,
   checkForUpdates: true,
-  thumbnailPreviews: true
+  thumbnailPreviews: true,
+  ejectAfterImport: true
 }
 
 function cleanToolSettings(value) {
@@ -25,7 +26,8 @@ function cleanToolSettings(value) {
     mirrorRear: typeof value?.mirrorRear === 'boolean' ? value.mirrorRear : true,
     segmentGapMinutes,
     checkForUpdates: typeof value?.checkForUpdates === 'boolean' ? value.checkForUpdates : true,
-    thumbnailPreviews: typeof value?.thumbnailPreviews === 'boolean' ? value.thumbnailPreviews : true
+    thumbnailPreviews: typeof value?.thumbnailPreviews === 'boolean' ? value.thumbnailPreviews : true,
+    ejectAfterImport: typeof value?.ejectAfterImport === 'boolean' ? value.ejectAfterImport : true
   }
 }
 

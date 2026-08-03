@@ -50,7 +50,7 @@ Clip modification times are used as recording times. Consecutive clips belong to
 
 Running or packaging from source also requires Node.js 22.12 or newer and pnpm 11.9.
 
-On Windows, Dashcam Clipper probes NVIDIA NVENC, AMD AMF, Intel Quick Sync, and Windows Media Foundation HEVC encoders, then falls back to CPU `libx265`. On Apple Silicon and other supported Macs, it prefers VideoToolbox HEVC and falls back to `libx265`. A hardware encoder that passes the initial probe but fails on the real video is retried automatically with CPU HEVC.
+On Windows, Dashcam Clipper probes NVIDIA NVENC, AMD AMF, Intel Quick Sync, and Windows Media Foundation HEVC encoders, then falls back to CPU `libx265`. On Apple Silicon and other supported Macs, it prefers VideoToolbox HEVC and falls back to `libx265`. VideoToolbox uses a 3 Mbps target with a 4.5 Mbps peak to prevent unexpectedly large macOS exports. A hardware encoder that passes the initial probe but fails on the real video is retried automatically with CPU HEVC.
 
 ### Windows setup
 
@@ -85,7 +85,7 @@ corepack pnpm start
 
 1. Choose the permanent server library. This path is saved for later launches.
 2. View the server library directly or choose a microSD card as the browsing source.
-3. When viewing a card, import files that do not exist in the server library. Existing server files are never overwritten.
+3. When viewing a card, import files that do not exist in the server library. Existing server files are never overwritten. After a successful import, the app switches to the server library and can safely eject the card.
 4. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
 5. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
 6. The segment list opens on **Unprocessed**. Switch to **All** or **Processed** when needed.
@@ -126,7 +126,7 @@ Within each segment and across a selected multi-segment merge, clips are natural
 
 ## Importing from a microSD card
 
-When the browsing source differs from the server library, Dashcam Clipper compares every relative filename in `DCIMA` and `DCIMB`. The import banner reports new front and rear files separately. **Import new clips** copies only missing files to the matching server camera folder, including their original subfolder structure, filename casing, and modification time.
+When the browsing source differs from the server library, Dashcam Clipper compares every relative filename in `DCIMA` and `DCIMB`. The import banner reports new front and rear files separately. **Import new clips** copies only missing files to the matching server camera folder, including their original subfolder structure, filename casing, and modification time. A completed import automatically opens the server library. When automatic eject is enabled, the app also asks Windows or macOS to safely eject a removable external source. If another program is using the card, it stays mounted and the app tells you to eject it manually.
 
 Imports use exclusive file creation. If a destination file already exists, including one created after the scan, it is skipped and never replaced. Processing metadata remains on the server and is not copied to or created on the card.
 
@@ -141,6 +141,7 @@ Open **Settings** in the top-right corner of the app to customize:
 - The driving-segment gap from 1 to 60 minutes
 - Thumbnail generation
 - Automatic update checks
+- Automatic microSD eject after a successful import
 
 Dashcam Clipper searches for FFmpeg and VLC automatically. On macOS, FFmpeg detection includes Apple Silicon Homebrew at `/opt/homebrew/bin`, Intel Homebrew at `/usr/local/bin`, and MacPorts at `/opt/local/bin`. Use **Choose** if either program is installed somewhere else. Selected paths and other settings are saved and reused on the next launch.
 
@@ -197,6 +198,6 @@ This creates DMG and ZIP packages for Apple Silicon and Intel Macs in `dist`.
 The `Build installers` GitHub Actions workflow can be started manually to download test artifacts. Pushing a version tag builds Windows and macOS packages and attaches all of them to a GitHub Release:
 
 ```powershell
-git tag v0.2.4
-git push origin v0.2.4
+git tag v0.2.5
+git push origin v0.2.5
 ```

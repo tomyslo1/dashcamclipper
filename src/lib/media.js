@@ -354,7 +354,18 @@ function selectEncoder(encoders, platform, architecture, canUse) {
     candidates.push({
       codec: 'hevc_videotoolbox',
       name: architecture === 'arm64' ? 'Apple Silicon VideoToolbox HEVC' : 'Apple VideoToolbox HEVC',
-      args: ['-c:v', 'hevc_videotoolbox', '-q:v', '65', '-tag:v', 'hvc1']
+      args: [
+        '-c:v',
+        'hevc_videotoolbox',
+        '-b:v',
+        '3000k',
+        '-maxrate',
+        '4500k',
+        '-bufsize',
+        '9000k',
+        '-tag:v',
+        'hvc1'
+      ]
     })
   }
 

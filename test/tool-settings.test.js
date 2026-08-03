@@ -21,7 +21,8 @@ test('keeps only supported executable path settings', () => {
     mirrorRear: true,
     segmentGapMinutes: 3,
     checkForUpdates: true,
-    thumbnailPreviews: true
+    thumbnailPreviews: true,
+    ejectAfterImport: true
   })
 })
 
@@ -31,7 +32,8 @@ test('cleans appearance and processing preferences', () => {
     mirrorRear: false,
     segmentGapMinutes: 120,
     checkForUpdates: false,
-    thumbnailPreviews: false
+    thumbnailPreviews: false,
+    ejectAfterImport: false
   }), {
     ffmpegPath: '',
     vlcPath: '',
@@ -39,7 +41,8 @@ test('cleans appearance and processing preferences', () => {
     mirrorRear: false,
     segmentGapMinutes: 60,
     checkForUpdates: false,
-    thumbnailPreviews: false
+    thumbnailPreviews: false,
+    ejectAfterImport: false
   })
 })
 
@@ -53,7 +56,8 @@ test('persists and reloads selected external tools', async (context) => {
     mirrorRear: false,
     segmentGapMinutes: 5,
     checkForUpdates: false,
-    thumbnailPreviews: true
+    thumbnailPreviews: true,
+    ejectAfterImport: false
   }
 
   await writeToolSettings(userDataPath, expected)
@@ -72,6 +76,7 @@ test('uses automatic detection defaults when no settings file exists', async (co
     mirrorRear: true,
     segmentGapMinutes: 3,
     checkForUpdates: true,
-    thumbnailPreviews: true
+    thumbnailPreviews: true,
+    ejectAfterImport: true
   })
 })
