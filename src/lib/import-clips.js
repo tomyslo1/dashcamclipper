@@ -1,6 +1,7 @@
-const { constants } = require('node:fs')
+const { createReadStream, createWriteStream } = require('node:fs')
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { pipeline } = require('node:stream/promises')
 
 function destinationForImport(item, cameraFolders) {
   if (!['front', 'rear'].includes(item.camera)) {
@@ -42,12 +43,16 @@ async function copyImportPlan(importPlan, cameraFolders, onProgress = () => {}, 
     let copiedCurrentFile = false
 
     try {
-      await fs.copyFile(item.sourcePath, destinationPath, constants.COPYFILE_EXCL)
+      await pipeline(
+        createReadStream(item.sourcePath),
+        createWriteStream(destinationPath, { flags: 'wx' })
+      )
       copiedCurrentFile = true
     } catch (error) {
       if (error.code === 'EEXIST') {
         skipped += 1
       } else {
+        await fs.rm(destinationPath, { force: true })
         throw error
       }
     }

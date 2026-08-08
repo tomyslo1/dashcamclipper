@@ -692,18 +692,6 @@ function processedFolder() {
   return 'Y:\\Videos\\Dashcam\\Processed'
 }
 
-function formatClipRange(clipRange) {
-  if (!clipRange || !Number.isInteger(clipRange.start) || !Number.isInteger(clipRange.end)) {
-    return ''
-  }
-
-  if (clipRange.start === clipRange.end) {
-    return ` (${clipRange.start})`
-  }
-
-  return ` (${clipRange.start} - ${clipRange.end})`
-}
-
 function buildProcessedFilename(dateValue, name, clipRange) {
   const cleanName = sanitizeClipName(name)
 
@@ -711,7 +699,7 @@ function buildProcessedFilename(dateValue, name, clipRange) {
     throw new Error('Enter a name for the clip.')
   }
 
-  return `${formatFilenameDate(dateValue)} ${cleanName}${formatClipRange(clipRange)}.mp4`
+  return `${formatFilenameDate(dateValue)} ${cleanName}.mp4`
 }
 
 function extractProcessedClipName(filename) {
@@ -999,12 +987,13 @@ async function applyFilenameDateToVideo(filePath, onProgress, onProcess) {
 
 async function saveTrimmedVideo(options, onProgress, onProcess) {
   const destinationFolder = await ensureProcessedFolder()
-  const filename = buildProcessedFilename(options.filenameDate, options.name, options.clipRange)
+  const generatedFilename = buildProcessedFilename(options.filenameDate, options.name, options.clipRange)
+  const filename = options.replaceFileName || generatedFilename
   const destinationPath = path.join(destinationFolder, filename)
-  const replaceExisting = typeof options.replaceFileName === 'string' && options.replaceFileName === filename
+  const replaceExisting = typeof options.replaceFileName === 'string' && options.replaceFileName.length > 0
 
-  if (options.replaceFileName && !replaceExisting) {
-    throw new Error('The rebuilt video filename no longer matches the saved video being replaced.')
+  if (replaceExisting && processedVideoPath(options.replaceFileName) !== destinationPath) {
+    throw new Error('The saved video replacement path is invalid.')
   }
 
   if (!replaceExisting) {
@@ -1089,7 +1078,6 @@ module.exports = {
   findEncoder,
   findFfmpeg,
   findVlc,
-  formatClipRange,
   formatFilenameDate,
   generateSegmentThumbnail,
   generateProcessedVideoThumbnail,

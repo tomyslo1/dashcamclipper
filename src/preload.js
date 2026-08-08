@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('dashcam', {
   playSegment: (segmentId) => ipcRenderer.invoke('play-segment', segmentId),
   getSegmentThumbnail: (segmentId) => ipcRenderer.invoke('get-segment-thumbnail', segmentId),
   setProcessingState: (options) => ipcRenderer.invoke('set-processing-state', options),
+  clearProcessedHistory: () => ipcRenderer.invoke('clear-processed-history'),
   importNewClips: () => ipcRenderer.invoke('import-new-clips'),
   getNameSuggestions: () => ipcRenderer.invoke('get-name-suggestions'),
   listProcessedVideos: () => ipcRenderer.invoke('list-processed-videos'),

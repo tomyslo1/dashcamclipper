@@ -132,7 +132,7 @@ test('formats the required archive filename timestamp', () => {
   assert.equal(formatFilenameDate(new Date(2026, 6, 31, 13, 31)), '2026-07-31_13-31')
   assert.equal(
     buildProcessedFilename(new Date(2026, 6, 30, 15, 10), 'Mercator', { start: 94, end: 106 }),
-    '2026-07-30_15-10 Mercator (94 - 106).mp4'
+    '2026-07-30_15-10 Mercator.mp4'
   )
 })
 

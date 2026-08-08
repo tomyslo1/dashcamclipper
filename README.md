@@ -35,7 +35,7 @@ Server library/
 ├── DCIMA/    front camera recordings
 ├── DCIMB/    rear camera recordings
 └── dashcamclipper/
-    └── metadata.json    processing state created by the app
+    └── metadata.json    processing state and saved-video recipes
 ```
 
 A microSD card source only needs `DCIMA` and `DCIMB`; Dashcam Clipper never creates its metadata folder on the card. Subfolders inside both camera folders are scanned too. AVI, MP4, MOV, and MKV files are supported.
@@ -89,27 +89,27 @@ corepack pnpm start
 4. Show every clip or filter inclusively from a starting date and optional time. An ending date and time are optional.
 5. Review the front-camera thumbnail shown for each driving segment when FFmpeg is available.
 6. The segment list opens on **Unprocessed**. Switch to **All** or **Processed** when needed.
-7. Open **Saved videos** to browse finished MP4 files from the Processed folder by name, recording date, and thumbnail. Select one or several videos with their checkboxes, then use **Apply date from filename** to update them together without re-encoding. Use **Re-encode** on one saved video to rebuild it from the original clip range when every required front and rear file is still in the server library.
+7. Open **Saved videos** to browse finished MP4 files from the Processed folder by name, recording date, and thumbnail. Select one or several videos with their checkboxes, then use **Apply date from filename** to update them together without re-encoding. Use **Re-encode** on one saved video to rebuild it from its saved original clip list when every required front and rear file is still in the server library.
 8. Choose a driving segment:
    - **Play in VLC** opens a playlist of its front-camera clips.
    - **Merge & trim** stacks every front/rear pair vertically and joins the one-minute clips. Rear-camera mirroring is enabled by default, except for its bottom 50-pixel strip, and can be turned off before merging. Only front-camera audio is kept, and it is copied without re-encoding. Rear-camera audio is ignored.
    - **Delete** asks twice, then moves both camera files to the Recycle Bin or Trash.
 9. Select multiple segments with their checkboxes to merge them into one video, mark them processed or unprocessed together, or delete them with two confirmations. **Select visible** selects the current tab at once.
-10. Mark a whole segment as processed, or use **Show clips** to mark individual recordings.
+10. Mark a whole segment as processed, or use **Show clips** to mark individual recordings. The **Processed** tab includes a double-confirmed **Clear processed history** button for starting a new card sequence. It never deletes video files.
 11. Name a merged clip and optionally replace the automatic filename date, time, or both. Leaving either field blank keeps that part from the second clip's modification time. Then set the video's start and end in the built-in trimming screen. The naming dialog offers up to five frequently used names from existing processed MP4 files.
 12. Save it to the archive. Only after the save succeeds, every source clip used for the video is marked processed; the original recordings are not deleted.
 
 Finished clips use this filename:
 
 ```text
-YYYY-MM-DD_HH-mm Clip name (first - last).mp4
+YYYY-MM-DD_HH-mm Clip name.mp4
 ```
 
-The timestamp comes from the modification time of the segment's second front-camera clip. The numbers are taken from the numeric suffixes in the first and last source filenames, such as `MOVI0094.avi` through `MOVI0106.avi`. A one-clip segment uses a single number in parentheses.
+The timestamp comes from the modification time of the segment's second front-camera clip. MOVI clip numbers are not added to the filename.
 
 The filename timestamp is also stored as the MP4 creation time, and the saved file's modified time is set to match it. Existing MP4 files using the same filename format can be updated from the Saved videos page. FFmpeg remuxes those files with stream copying, so video and audio are not re-encoded.
 
-Re-encoding a saved video reads the clip range from its filename, finds each matching original in the server `DCIMA` and `DCIMB` folders, and rebuilds them in filename order with the current encoder and rear-mirroring setting. The app refuses if a clip is missing or if duplicate clip numbers make the choice ambiguous. Previous trim positions are not stored, so the trim screen opens again. The existing saved video remains untouched until its replacement is completely written.
+Re-encoding a saved video reads its exact original clip paths from server metadata, finds each matching original in the server `DCIMA` and `DCIMB` folders, and rebuilds them in filename order with the current encoder and rear-mirroring setting. Older filenames containing a MOVI range remain supported. The app refuses if an original is missing. Previous trim positions are not stored, so the trim screen opens again. The existing saved video remains untouched until its replacement is completely written.
 
 They are written to:
 
@@ -120,7 +120,7 @@ The app reports an error if the archive drive is not connected. It does not sile
 
 ## Processing metadata
 
-Dashcam Clipper creates `dashcamclipper/metadata.json` only in the configured server library. Even while browsing a microSD card, processed state is read from and written to that server metadata. Processed clips are identified by their relative path inside `DCIMA`, so the state continues to work if the card or library receives a different drive letter or mount point.
+Dashcam Clipper creates `dashcamclipper/metadata.json` only in the configured server library. Even while browsing a microSD card, processed state and saved-video recipes are read from and written to that server metadata. Processed clips are identified by their relative path inside `DCIMA`, so the state continues to work if the card or library receives a different drive letter or mount point.
 
 Marking a segment processes every visible clip in that segment. A segment counts as processed only when all of its clips are processed; otherwise it remains under **Unprocessed** and shows the partial count. The metadata file is written separately from the recordings and the video files are not modified.
 
@@ -128,9 +128,9 @@ Within each segment and across a selected multi-segment merge, clips are natural
 
 ## Importing from a microSD card
 
-When the browsing source differs from the server library, Dashcam Clipper compares every relative filename in `DCIMA` and `DCIMB`. The import banner reports new front and rear files separately. **Import new clips** copies only missing files to the matching server camera folder, including their original subfolder structure, filename casing, and modification time. A completed import automatically opens the server library. When automatic eject is enabled, the app also asks Windows or macOS to safely eject a removable external source. If another program is using the card, it stays mounted and the app tells you to eject it manually.
+When the browsing source differs from the server library, Dashcam Clipper compares every relative filename, file size, and modification time in `DCIMA` and `DCIMB`. The import banner reports new front and rear files separately. **Import new clips** copies new files to the matching server camera folder, including their filename casing and modification time. A completed import automatically opens the server library. When automatic eject is enabled, the app also asks Windows or macOS to safely eject a removable external source. If another program is using the card, it stays mounted and the app tells you to eject it manually.
 
-Imports use exclusive file creation. If a destination file already exists, including one created after the scan, it is skipped and never replaced. Processing metadata remains on the server and is not copied to or created on the card.
+Imports use exclusive file creation. Existing server files are never replaced. When a new card reuses a name such as `MOVI0001.avi`, the new recording is stored under a matching `Imports` subfolder in both camera directories. Scanning the same card again recognizes that imported copy instead of duplicating it. The macOS copy path uses an exclusive stream that also works with mounted network volumes. Processing metadata remains on the server and is not copied to or created on the card.
 
 ## Settings
 
@@ -200,6 +200,6 @@ This creates DMG and ZIP packages for Apple Silicon and Intel Macs in `dist`.
 The `Build installers` GitHub Actions workflow can be started manually to download test artifacts. Pushing a version tag builds Windows and macOS packages and attaches all of them to a GitHub Release:
 
 ```powershell
-git tag v0.2.6
-git push origin v0.2.6
+git tag v0.2.7
+git push origin v0.2.7
 ```

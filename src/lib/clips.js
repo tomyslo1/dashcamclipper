@@ -63,6 +63,115 @@ async function readVideoFiles(folderPath, basePath = folderPath) {
   return files
 }
 
+function filesMatch(sourceFile, libraryFile) {
+  return sourceFile.size === libraryFile.size && Math.abs(sourceFile.recordedAt - libraryFile.recordedAt) <= 2500
+}
+
+function createImportBatchFolder(frontFiles, rearFiles) {
+  const files = [...frontFiles, ...rearFiles].sort((left, right) => left.recordedAt - right.recordedAt || FILENAME_COLLATOR.compare(left.relativePath, right.relativePath))
+  const anchor = files[0]
+
+  if (!anchor) {
+    return 'Imports/empty'
+  }
+
+  const date = anchor.recordedAt.toISOString().replace(/[:]/g, '-').replace(/\.\d{3}Z$/, 'Z')
+  const fingerprint = crypto
+    .createHash('sha1')
+    .update(`${anchor.relativeKey}:${anchor.size}:${anchor.recordedAt.getTime()}`)
+    .digest('hex')
+    .slice(0, 8)
+  return `Imports/${date}-${fingerprint}`
+}
+
+function findReusedRelativeKeys(sourceFiles, libraryFiles) {
+  const libraryByKey = new Map(libraryFiles.map((file) => [file.relativeKey, file]))
+  return new Set(sourceFiles
+    .filter((file) => {
+      const directMatch = libraryByKey.get(file.relativeKey)
+      return directMatch && !filesMatch(file, directMatch)
+    })
+    .map((file) => file.relativeKey))
+}
+
+function planCameraImports(sourceFiles, libraryFiles, camera, batchFolder, reusedRelativeKeys) {
+  const libraryByKey = new Map(libraryFiles.map((file) => [file.relativeKey, file]))
+  const destinationKeys = new Map()
+  const newSourcePaths = new Set()
+  const importPlan = []
+
+  for (const file of sourceFiles) {
+    let destinationRelativePath = file.relativePath
+    let destinationKey = file.relativeKey
+
+    if (reusedRelativeKeys.has(file.relativeKey)) {
+      destinationRelativePath = path.posix.join(batchFolder, file.relativePath)
+      destinationKey = destinationRelativePath.toLowerCase()
+    }
+
+    const destinationMatch = libraryByKey.get(destinationKey)
+    destinationKeys.set(file.path, destinationKey)
+
+    if (!destinationMatch || !filesMatch(file, destinationMatch)) {
+      newSourcePaths.add(file.path)
+      importPlan.push({
+        camera,
+        sourcePath: file.path,
+        sourceRelativePath: file.relativePath,
+        relativePath: destinationRelativePath,
+        relativeKey: destinationKey,
+        size: file.size
+      })
+    }
+  }
+
+  return { destinationKeys, importPlan, newSourcePaths }
+}
+
+async function findOriginalClipsByKeys(rootPath, clipKeys) {
+  if (!Array.isArray(clipKeys) || clipKeys.length === 0) {
+    throw new Error('No original clip list was saved for this video.')
+  }
+
+  const cameraFolders = await findCameraFolders(rootPath)
+  const [frontFiles, rearFiles] = await Promise.all([
+    readVideoFiles(cameraFolders.frontPath),
+    readVideoFiles(cameraFolders.rearPath)
+  ])
+  const frontByKey = new Map(frontFiles.map((file) => [file.relativeKey, file]))
+  const rearByKey = new Map(rearFiles.map((file) => [file.relativeKey, file]))
+  const clips = []
+
+  for (const requestedKey of clipKeys) {
+    const key = requestedKey.toLowerCase()
+    const front = frontByKey.get(key)
+    const rear = rearByKey.get(key)
+
+    if (!front) {
+      throw new Error(`Original front clip ${requestedKey} is missing from DCIMA.`)
+    }
+
+    if (!rear) {
+      throw new Error(`Original rear clip ${requestedKey} is missing from DCIMB.`)
+    }
+
+    clips.push({
+      key,
+      recordedAt: front.recordedAt,
+      front,
+      rear,
+      processed: false,
+      processedAt: null,
+      newFront: false,
+      newRear: false,
+      newToLibrary: false,
+      size: front.size + rear.size
+    })
+  }
+
+  return sortClipsByName(clips)
+}
+
 async function findOriginalClips(rootPath, clipRange) {
   const start = Number(clipRange?.start)
   const end = Number(clipRange?.end)
@@ -442,42 +551,28 @@ async function scanSource(rootPath, filters = {}, libraryRootPath = rootPath, ma
   const [frontFiles, rearFiles] = sourceFiles
   const [libraryFrontFiles, libraryRearFiles] = libraryFiles
   const metadata = await readProcessingMetadata(libraryRootPath)
-  const libraryFrontKeys = new Set(libraryFrontFiles.map((file) => file.relativeKey))
-  const libraryRearKeys = new Set(libraryRearFiles.map((file) => file.relativeKey))
   const importPlan = []
+  let frontImports = { destinationKeys: new Map(), importPlan: [], newSourcePaths: new Set() }
+  let rearImports = { destinationKeys: new Map(), importPlan: [], newSourcePaths: new Set() }
 
   if (!sourceIsLibrary) {
-    for (const file of frontFiles) {
-      if (!libraryFrontKeys.has(file.relativeKey)) {
-        importPlan.push({
-          camera: 'front',
-          sourcePath: file.path,
-          relativePath: file.relativePath,
-          relativeKey: file.relativeKey,
-          size: file.size
-        })
-      }
-    }
-
-    for (const file of rearFiles) {
-      if (!libraryRearKeys.has(file.relativeKey)) {
-        importPlan.push({
-          camera: 'rear',
-          sourcePath: file.path,
-          relativePath: file.relativePath,
-          relativeKey: file.relativeKey,
-          size: file.size
-        })
-      }
-    }
+    const batchFolder = createImportBatchFolder(frontFiles, rearFiles)
+    const reusedRelativeKeys = new Set([
+      ...findReusedRelativeKeys(frontFiles, libraryFrontFiles),
+      ...findReusedRelativeKeys(rearFiles, libraryRearFiles)
+    ])
+    frontImports = planCameraImports(frontFiles, libraryFrontFiles, 'front', batchFolder, reusedRelativeKeys)
+    rearImports = planCameraImports(rearFiles, libraryRearFiles, 'rear', batchFolder, reusedRelativeKeys)
+    importPlan.push(...frontImports.importPlan, ...rearImports.importPlan)
   }
 
   const pairing = pairCameraFiles(frontFiles, rearFiles)
   reconcileClipTimeline(pairing.clips, maximumGapMs)
 
   for (const clip of pairing.clips) {
-    clip.newFront = !sourceIsLibrary && !libraryFrontKeys.has(clip.front.relativeKey)
-    clip.newRear = !sourceIsLibrary && Boolean(clip.rear) && !libraryRearKeys.has(clip.rear.relativeKey)
+    clip.key = frontImports.destinationKeys.get(clip.front.path) || clip.front.relativeKey
+    clip.newFront = !sourceIsLibrary && frontImports.newSourcePaths.has(clip.front.path)
+    clip.newRear = !sourceIsLibrary && Boolean(clip.rear) && rearImports.newSourcePaths.has(clip.rear.path)
     clip.newToLibrary = clip.newFront || clip.newRear
   }
 
@@ -544,6 +639,7 @@ module.exports = {
   createClipRange,
   compareClipsByName,
   findOriginalClips,
+  findOriginalClipsByKeys,
   filterClips,
   applyProcessingMetadata,
   findCameraFolders,

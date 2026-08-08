@@ -4,9 +4,12 @@ const path = require('node:path')
 const test = require('node:test')
 
 const {
+  clearProcessedClips,
+  getSavedVideoRecipe,
   metadataPaths,
   readProcessingMetadata,
-  setClipsProcessed
+  setClipsProcessed,
+  setSavedVideoRecipe
 } = require('../src/lib/processing-metadata')
 
 async function createSource(context) {
@@ -21,9 +24,23 @@ test('creates source-local metadata on the first read', async (context) => {
   const paths = metadataPaths(rootPath)
 
   assert.deepEqual(metadata.processedClips, {})
+  assert.deepEqual(metadata.savedVideos, {})
   assert.equal(path.basename(paths.directoryPath), 'dashcamclipper')
   assert.equal(path.basename(paths.filePath), 'metadata.json')
-  assert.equal(JSON.parse(await fs.readFile(paths.filePath, 'utf8')).version, 1)
+  assert.equal(JSON.parse(await fs.readFile(paths.filePath, 'utf8')).version, 2)
+})
+
+test('clears processed history without deleting saved video recipes', async (context) => {
+  const rootPath = await createSource(context)
+  const fileName = '2026-08-08_14-00 Drive.mp4'
+  await setClipsProcessed(rootPath, ['Imports/card/MOVI0001.avi'], true)
+  await setSavedVideoRecipe(rootPath, fileName, ['Imports/card/MOVI0001.avi'])
+
+  const metadata = await clearProcessedClips(rootPath)
+  const recipe = await getSavedVideoRecipe(rootPath, fileName)
+
+  assert.deepEqual(metadata.processedClips, {})
+  assert.deepEqual(recipe.clipKeys, ['imports/card/movi0001.avi'])
 })
 
 test('marks individual clips processed and unprocessed', async (context) => {

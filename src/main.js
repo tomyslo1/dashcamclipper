@@ -17,6 +17,7 @@ const {
   createClipRange,
   findCameraFolders,
   findOriginalClips,
+  findOriginalClipsByKeys,
   refreshSegmentProcessing,
   scanSource,
   sortClipsByName,
@@ -26,7 +27,6 @@ const {
 const {
   applyFilenameDateOverrides,
   applyFilenameDateToVideo,
-  buildProcessedFilename,
   cleanupTemporaryFiles,
   dateFromProcessedVideoFilename,
   discardTemporaryVideo,
@@ -61,8 +61,11 @@ const { copyImportPlan } = require('./lib/import-clips')
 const { ejectSource } = require('./lib/eject-source')
 
 const {
+  clearProcessedClips,
+  getSavedVideoRecipe,
   readProcessingMetadata,
-  setClipsProcessed
+  setClipsProcessed,
+  setSavedVideoRecipe
 } = require('./lib/processing-metadata')
 
 const { buildUpdateStatus, isReleaseUrl } = require('./lib/update-check')
@@ -324,6 +327,19 @@ async function updateProcessingState(options) {
   return toPublicSegment(segment)
 }
 
+async function clearProcessedHistory() {
+  if (activeProcess || importInProgress) {
+    throw new Error('Wait for the current media or import job to finish before clearing processed history.')
+  }
+
+  if (!librarySettings.libraryPath || !currentRootPath) {
+    throw new Error('Choose and scan a source before clearing processed history.')
+  }
+
+  await queueMetadataWrite(() => clearProcessedClips(librarySettings.libraryPath))
+  return updateScan(currentRootPath, currentFilters)
+}
+
 async function updateScan(rootPath, filters) {
   if (!librarySettings.libraryPath) {
     throw new Error('Choose the permanent server library before scanning a source.')
@@ -383,6 +399,7 @@ async function importNewClips() {
     return {
       copied: 0,
       skipped: 0,
+      planned: 0,
       result,
       eject
     }
@@ -404,6 +421,11 @@ async function importNewClips() {
       }),
       () => importCancelled
     )
+
+    if (copyResult.copied + copyResult.skipped !== plan.length) {
+      throw new Error('The import finished with an unexpected file count. Scan the card again before removing it.')
+    }
+
     sendProgress({ phase: 'Opening the server library', percent: 100 })
     const result = await updateScan(librarySettings.libraryPath, currentFilters)
     let eject = { requested: false, attempted: false, ejected: false, message: '' }
@@ -413,7 +435,7 @@ async function importNewClips() {
       eject = await ejectSource(sourcePath, librarySettings.libraryPath)
     }
 
-    return { ...copyResult, result, eject }
+    return { ...copyResult, planned: plan.length, result, eject }
   } finally {
     importInProgress = false
     importCancelled = false
@@ -479,20 +501,25 @@ async function reencodeSavedVideo(fileName) {
   const savedPath = processedVideoPath(fileName)
   const parsed = parseProcessedVideoFilename(fileName)
 
-  if (!parsed?.clipRange) {
-    throw new Error('The saved filename needs an original clip number or range in parentheses.')
+  if (!parsed) {
+    throw new Error('The saved filename must start with its date and time before it can be rebuilt.')
   }
 
   const filenameDate = dateFromProcessedVideoFilename(fileName)
-  const normalizedName = buildProcessedFilename(filenameDate, parsed.title, parsed.clipRange)
-
-  if (normalizedName !== fileName) {
-    throw new Error('The saved filename must use the standard Dashcam Clipper format before it can be rebuilt.')
-  }
-
   await fs.access(savedPath)
   sendProgress({ phase: 'Finding the original camera clips', percent: 0 })
-  const clips = await findOriginalClips(librarySettings.libraryPath, parsed.clipRange)
+  const recipe = await getSavedVideoRecipe(librarySettings.libraryPath, fileName)
+  let clips
+
+  if (recipe) {
+    clips = await findOriginalClipsByKeys(librarySettings.libraryPath, recipe.clipKeys)
+  } else if (parsed.clipRange) {
+    clips = await findOriginalClips(librarySettings.libraryPath, parsed.clipRange)
+  } else {
+    throw new Error('No saved original clip list was found for this video.')
+  }
+
+  const clipRange = createClipRange(clips)
   const outputPath = await mergeSegment(
     clips,
     { mirrorRear: toolSettings.mirrorRear !== false },
@@ -505,7 +532,7 @@ async function reencodeSavedVideo(fileName) {
     path: outputPath,
     name: parsed.title,
     filenameDate,
-    clipRange: parsed.clipRange,
+    clipRange,
     clipKeys: [...new Set(clips.map((clip) => clip.key))],
     replaceFileName: fileName
   })
@@ -515,10 +542,24 @@ async function reencodeSavedVideo(fileName) {
     videoUrl: pathToFileURL(outputPath).href,
     name: parsed.title,
     filenameDate: filenameDate.toISOString(),
-    clipRange: parsed.clipRange,
+    clipRange,
     durationMs: clips.length * 60 * 1000,
     replacesExisting: true
   }
+}
+
+async function listSavedVideos() {
+  const videos = await listProcessedVideos()
+
+  if (!librarySettings.libraryPath) {
+    return videos.map((video) => ({ ...video, hasOriginalRecipe: false }))
+  }
+
+  const metadata = await readProcessingMetadata(librarySettings.libraryPath)
+  return videos.map((video) => ({
+    ...video,
+    hasOriginalRecipe: Boolean(metadata.savedVideos[video.name.toLowerCase()])
+  }))
 }
 
 async function deleteSelectedSegments(segmentIds) {
@@ -723,11 +764,13 @@ function registerHandlers() {
     return queueMetadataWrite(() => updateProcessingState(options))
   })
 
+  ipcMain.handle('clear-processed-history', () => clearProcessedHistory())
+
   ipcMain.handle('import-new-clips', () => importNewClips())
 
   ipcMain.handle('get-name-suggestions', () => getProcessedNameSuggestions())
 
-  ipcMain.handle('list-processed-videos', () => listProcessedVideos())
+  ipcMain.handle('list-processed-videos', () => listSavedVideos())
 
   ipcMain.handle('get-processed-video-thumbnail', (_event, fileName) => generateProcessedVideoThumbnail(fileName))
 
@@ -833,9 +876,12 @@ function registerHandlers() {
     let processingWarning = ''
 
     try {
-      await queueMetadataWrite(() => setClipKeysProcessingState(output.clipKeys, true))
+      await queueMetadataWrite(async () => {
+        await setSavedVideoRecipe(librarySettings.libraryPath, path.basename(destinationPath), output.clipKeys)
+        await setClipKeysProcessingState(output.clipKeys, true)
+      })
     } catch (error) {
-      processingWarning = `The video was saved, but its source clips could not be marked processed: ${error.message}`
+      processingWarning = `The video was saved, but its Dashcam Clipper metadata could not be fully updated: ${error.message}`
     }
 
     temporaryOutputs.delete(options.outputId)

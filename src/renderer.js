@@ -42,6 +42,7 @@ const selectSavedVideosButton = document.querySelector('#select-saved-videos')
 const clearSavedSelectionButton = document.querySelector('#clear-saved-selection')
 const selectionCount = document.querySelector('#selection-count')
 const selectVisibleButton = document.querySelector('#select-visible')
+const clearProcessedHistoryButton = document.querySelector('#clear-processed-history')
 const mergeSelectedButton = document.querySelector('#merge-selected')
 const processSelectedButton = document.querySelector('#process-selected')
 const unprocessSelectedButton = document.querySelector('#unprocess-selected')
@@ -257,18 +258,6 @@ function cleanPreviewName(name) {
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
     .replace(/\s+/g, ' ')
     .replace(/[. ]+$/g, '')
-}
-
-function formatClipRange(clipRange) {
-  if (!clipRange) {
-    return ''
-  }
-
-  if (clipRange.start === clipRange.end) {
-    return ` (${clipRange.start})`
-  }
-
-  return ` (${clipRange.start} - ${clipRange.end})`
 }
 
 function readableError(error) {
@@ -561,15 +550,15 @@ function createSavedVideoThumbnail(index) {
 }
 
 async function reencodeSavedVideo(video) {
-  if (!video.clipRange) {
+  if (!video.clipRange && !video.hasOriginalRecipe) {
     return
   }
 
-  const range = video.clipRange.start === video.clipRange.end
-    ? String(video.clipRange.start)
-    : `${video.clipRange.start} - ${video.clipRange.end}`
+  const sourceDescription = video.clipRange
+    ? `original clips ${video.clipRange.start === video.clipRange.end ? video.clipRange.start : `${video.clipRange.start} - ${video.clipRange.end}`}`
+    : 'its saved original clip list'
   const confirmed = window.confirm(
-    `Re-encode ${video.title} from original clips ${range}?\n\nThe clips will be rebuilt with the current rear-mirroring setting. You will trim the new version again. The existing saved video will stay unchanged until you save its replacement.`
+    `Re-encode ${video.title} from ${sourceDescription}?\n\nThe clips will be rebuilt with the current rear-mirroring setting. You will trim the new version again. The existing saved video will stay unchanged until you save its replacement.`
   )
 
   if (!confirmed) {
@@ -648,10 +637,10 @@ function createSavedVideoCard(video, index) {
   })
 
   const reencodeButton = makeButton('Re-encode', 'secondary-button', () => reencodeSavedVideo(video))
-  reencodeButton.disabled = !video.clipRange
-  reencodeButton.title = video.clipRange
+  reencodeButton.disabled = !video.clipRange && !video.hasOriginalRecipe
+  reencodeButton.title = video.clipRange || video.hasOriginalRecipe
     ? 'Rebuild this video from its original front and rear clips'
-    : 'The filename does not contain an original clip range'
+    : 'No original clip list is available for this saved video'
   const actions = document.createElement('div')
   actions.className = 'saved-video-actions'
   actions.append(playButton, reencodeButton)
@@ -938,16 +927,57 @@ function toggleVisibleSelection() {
 
 function updateProcessingTabs() {
   const processedCount = state.segments.filter((segment) => segment.processed).length
+  const processedClipCount = state.segments.reduce((total, segment) => total + segment.processedCount, 0)
   const unprocessedCount = state.segments.length - processedCount
   document.querySelector('#all-count').textContent = String(state.segments.length)
   document.querySelector('#unprocessed-count').textContent = String(unprocessedCount)
   document.querySelector('#processed-count').textContent = String(processedCount)
   document.querySelector('#saved-count').textContent = String(state.savedVideos.length)
+  clearProcessedHistoryButton.classList.toggle('hidden', state.processingView !== 'processed')
+  clearProcessedHistoryButton.disabled = processedClipCount === 0
 
   for (const tab of document.querySelectorAll('.processing-tab')) {
     const active = tab.dataset.processingView === state.processingView
     tab.classList.toggle('active', active)
     tab.setAttribute('aria-selected', String(active))
+  }
+}
+
+async function clearProcessedHistory() {
+  const processedClips = state.segments.reduce((total, segment) => total + segment.processedCount, 0)
+
+  if (processedClips === 0) {
+    return
+  }
+
+  const firstConfirmation = window.confirm(
+    `Clear the processed history for ${processedClips} clips?\n\nNo video files will be deleted.`
+  )
+
+  if (!firstConfirmation) {
+    return
+  }
+
+  const secondConfirmation = window.confirm(
+    'Are you sure? Every clip will appear unprocessed again. This is useful before starting a new microSD card sequence.'
+  )
+
+  if (!secondConfirmation) {
+    return
+  }
+
+  clearProcessedHistoryButton.disabled = true
+
+  try {
+    const result = await window.dashcam.clearProcessedHistory()
+    state.selectedSegmentIds.clear()
+    applyScanResult(result)
+    renderResults()
+    showToast('Processed clip history cleared. No video files were deleted.')
+  } catch (error) {
+    showError(error)
+  } finally {
+    clearProcessedHistoryButton.disabled = false
   }
 }
 
@@ -1135,7 +1165,6 @@ async function askForName(selection) {
   const suggestions = await window.dashcam.getNameSuggestions().catch(() => [])
 
   return new Promise((resolve) => {
-    const range = formatClipRange(selection.clipRange)
     const multiple = selection.segmentCount > 1
     nameEyebrow.textContent = multiple ? `Combine ${selection.segmentCount} segments` : 'Combine segment'
     nameHeading.textContent = multiple ? 'Name the combined clip' : 'Name this clip'
@@ -1171,7 +1200,7 @@ async function askForName(selection) {
         filenameTimeOverride.value
       )
       const prefix = formatFilenamePrefix(previewDate)
-      filenamePreview.textContent = `${prefix}${name ? ` ${name}` : ' …'}${range}.mp4`
+      filenamePreview.textContent = `${prefix}${name ? ` ${name}` : ' …'}.mp4`
     }
 
     updatePreview()
@@ -1575,7 +1604,7 @@ async function importNewClips() {
     closeProgress()
     applyScanResult(response.result)
     renderResults()
-    const importedMessage = `${response.copied} new files imported${response.skipped ? ` - ${response.skipped} already existed` : ''}. Now viewing the server library.`
+    const importedMessage = `${response.copied} of ${response.planned} planned camera files imported${response.skipped ? ` - ${response.skipped} already existed` : ''}. Now viewing the server library.`
     const ejectMessage = response.eject?.requested ? ` ${response.eject.message}` : ''
     showToast(`${importedMessage}${ejectMessage}`)
   } catch (error) {
@@ -1695,6 +1724,7 @@ clearSavedSelectionButton.addEventListener('click', () => {
   renderSavedVideos()
 })
 selectVisibleButton.addEventListener('click', toggleVisibleSelection)
+clearProcessedHistoryButton.addEventListener('click', clearProcessedHistory)
 mergeSelectedButton.addEventListener('click', mergeSelectedSegments)
 processSelectedButton.addEventListener('click', () => setSelectedProcessingState(true))
 unprocessSelectedButton.addEventListener('click', () => setSelectedProcessingState(false))

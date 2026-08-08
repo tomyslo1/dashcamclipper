@@ -8,6 +8,7 @@ const {
   OUTLIER_DATE_GAP_MS,
   createClipRange,
   findOriginalClips,
+  findOriginalClipsByKeys,
   filterClips,
   groupSegments,
   pairCameraFiles,
@@ -18,6 +19,7 @@ const {
   toPublicSegment
 } = require('../src/lib/clips')
 const { setClipsProcessed } = require('../src/lib/processing-metadata')
+const { copyImportPlan } = require('../src/lib/import-clips')
 
 function cameraFile(name, time, camera) {
   return {
@@ -106,6 +108,9 @@ test('finds every original front and rear file in a saved clip range', async (co
     'MOVI0096.avi'
   ])
   assert.ok(clips.every((clip) => clip.rear))
+
+  const savedRecipeClips = await findOriginalClipsByKeys(rootPath, ['movi0094.avi', 'movi0096.avi'])
+  assert.deepEqual(savedRecipeClips.map((clip) => clip.front.name), ['MOVI0094.avi', 'MOVI0096.avi'])
 })
 
 test('refuses to rebuild a saved video when an original rear file is missing', async (context) => {
@@ -287,7 +292,10 @@ test('compares a removable source with server files and server metadata', async 
   }
 
   for (const cameraFolder of ['DCIMA', 'DCIMB']) {
-    await fs.writeFile(path.join(libraryPath, cameraFolder, 'Existing.AVI'), 'already stored')
+    const libraryFile = path.join(libraryPath, cameraFolder, 'Existing.AVI')
+    const existingTime = new Date(2026, 6, 31, 13, 31)
+    await fs.writeFile(libraryFile, 'Existing.AVI')
+    await fs.utimes(libraryFile, existingTime, existingTime)
   }
 
   await setClipsProcessed(libraryPath, ['existing.avi'], true)
@@ -302,4 +310,44 @@ test('compares a removable source with server files and server metadata', async 
   assert.equal(result.segments[0].newClipCount, 1)
   assert.equal(await fs.access(path.join(sourcePath, 'dashcamclipper')).then(() => true).catch(() => false), false)
   assert.equal(await fs.access(path.join(libraryPath, 'dashcamclipper', 'metadata.json')).then(() => true).catch(() => false), true)
+})
+
+test('imports reused MOVI filenames into a new server subfolder without overwriting', async (context) => {
+  const rootPath = await fs.mkdtemp(path.join(process.cwd(), '.dashcam-collision-test-'))
+  context.after(() => fs.rm(rootPath, { recursive: true, force: true }))
+  const sourcePath = path.join(rootPath, 'card')
+  const libraryPath = path.join(rootPath, 'server')
+  const oldTime = new Date(2026, 6, 1, 10, 0)
+  const newTime = new Date(2026, 7, 8, 14, 0)
+
+  for (const cameraFolder of ['DCIMA', 'DCIMB']) {
+    const sourceFolder = path.join(sourcePath, cameraFolder)
+    const libraryFolder = path.join(libraryPath, cameraFolder)
+    await fs.mkdir(sourceFolder, { recursive: true })
+    await fs.mkdir(libraryFolder, { recursive: true })
+    const sourceFile = path.join(sourceFolder, 'MOVI0001.avi')
+    const libraryFile = path.join(libraryFolder, 'MOVI0001.avi')
+    await fs.writeFile(sourceFile, 'new card recording')
+    await fs.utimes(sourceFile, newTime, newTime)
+    await fs.writeFile(libraryFile, 'old card recording')
+    await fs.utimes(libraryFile, oldTime, oldTime)
+  }
+
+  const firstScan = await scanSource(sourcePath, { mode: 'all' }, libraryPath)
+
+  assert.equal(firstScan.importPlan.length, 2)
+  assert.ok(firstScan.importPlan.every((item) => item.relativePath.startsWith('Imports/')))
+  assert.equal(firstScan.importPlan[0].relativePath, firstScan.importPlan[1].relativePath)
+  await copyImportPlan(firstScan.importPlan, {
+    frontPath: firstScan.libraryFrontPath,
+    rearPath: firstScan.libraryRearPath
+  })
+
+  const secondScan = await scanSource(sourcePath, { mode: 'all' }, libraryPath)
+  assert.equal(secondScan.importPlan.length, 0)
+  assert.equal(await fs.readFile(path.join(libraryPath, 'DCIMA', 'MOVI0001.avi'), 'utf8'), 'old card recording')
+  assert.equal(
+    await fs.readFile(path.join(libraryPath, 'DCIMA', firstScan.importPlan[0].relativePath), 'utf8'),
+    'new card recording'
+  )
 })
